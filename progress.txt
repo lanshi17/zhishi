@@ -29,3 +29,7 @@ Next: ensure the deployed model supports OpenAI-compatible function calling.
 [2026-08-14] Task: complete reports, BMR expenditure, and food-image estimation
 Status: verified daily/weekly/monthly/quarterly/yearly report ranges; total expenditure now combines recorded exercise with BMR when a complete profile exists, with both components exposed in reports and deterministic expenditure results. Food images are passed to vision models and must be recorded through `health.record_diet`; 245 tests, typecheck, and build pass.
 Next: configure `LLM_SUPPORTS_IMAGE_INPUT=true` and, if needed, `LLM_VISION_MODEL` for the deployed vision-capable model.
+
+[2026-08-15] Task: 项目定名 知食 (ZhīShí)
+Status: 产品身份改名完成 — README 标题与部署示例、package.json name (zhishi)、CLI usage、活跃 PRD 代号均已更新;PG 数据库/容器名等本地基础设施标识有意保留;archive/ 历史文档不改写
+Next: 可选 — 仓库目录 /mnt/data/Projects/Systems/CLI/wechat_claw 重命名为 zhishi

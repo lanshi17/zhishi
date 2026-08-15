@@ -1,4 +1,4 @@
-# WeChat Claw
+# 知食 ZhīShí
 
 个人健康热量追踪助手 —— 通过微信发送自然语言记录每日饮食摄入与运动消耗，使用 LightRAG 知识库查询精确热量数据，自动生成日/周/月/季/年热量报告。
 
@@ -73,8 +73,8 @@ diet tool.
 ### PostgreSQL
 
 ```bash
-docker run -d --name wechat-claw-pg \
-  -e POSTGRES_DB=wechat_claw \
+docker run -d --name zhishi-pg \
+  -e POSTGRES_DB=zhishi \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -p 5432:5432 \
@@ -96,8 +96,8 @@ npx tsx scripts/init-knowledge-base.ts
 ### Test database
 
 ```bash
-docker run -d --name wechat-claw-pg-test \
-  -e POSTGRES_DB=wechat_claw_test \
+docker run -d --name zhishi-pg-test \
+  -e POSTGRES_DB=zhishi_test \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -p 5432:5432 \

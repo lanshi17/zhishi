@@ -23,7 +23,7 @@ function writeLine(stream: CliStream, line: string) {
 }
 
 function usage(stream: CliStream) {
-  writeLine(stream, "Usage: wechat-claw <message|approve|reject|tui|login> ...");
+  writeLine(stream, "Usage: zhishi <message|approve|reject|tui|login> ...");
   writeLine(stream, "  message <text...>");
   writeLine(stream, "  approve <approvalId>");
   writeLine(stream, "  reject <approvalId> [reason...]");
