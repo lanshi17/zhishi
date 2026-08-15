@@ -119,14 +119,14 @@ describe("createTuiController", () => {
   it("decodes terminal key input for navigation and reject entry", () => {
     expect(decodeTerminalInput("j")).toEqual([{ kind: "down" }]);
     expect(decodeTerminalInput("k")).toEqual([{ kind: "up" }]);
-    expect(decodeTerminalInput("\u001b[B")).toEqual([{ kind: "down" }]);
-    expect(decodeTerminalInput("\u001b[A")).toEqual([{ kind: "up" }]);
+    expect(decodeTerminalInput("[B")).toEqual([{ kind: "down" }]);
+    expect(decodeTerminalInput("[A")).toEqual([{ kind: "up" }]);
     expect(decodeTerminalInput("a")).toEqual([{ kind: "approve" }]);
     expect(decodeTerminalInput("r")).toEqual([{ kind: "reject" }]);
     expect(decodeTerminalInput("q")).toEqual([{ kind: "quit" }]);
     expect(decodeTerminalInput("\r")).toEqual([{ kind: "submit" }]);
-    expect(decodeTerminalInput("\u007f")).toEqual([{ kind: "backspace" }]);
-    expect(decodeTerminalInput("\u001b")).toEqual([{ kind: "escape" }]);
+    expect(decodeTerminalInput("")).toEqual([{ kind: "backspace" }]);
+    expect(decodeTerminalInput("")).toEqual([{ kind: "escape" }]);
     expect(decodeTerminalInput("no")).toEqual([
       { kind: "char", value: "n" },
       { kind: "char", value: "o" },
@@ -137,38 +137,44 @@ describe("createTuiController", () => {
     expect(decodeTerminalInput("r", "reject_input")).toEqual([{ kind: "char", value: "r" }]);
     expect(decodeTerminalInput("q", "reject_input")).toEqual([{ kind: "char", value: "q" }]);
     expect(decodeTerminalInput("\r", "reject_input")).toEqual([{ kind: "submit" }]);
-    expect(decodeTerminalInput("\u001b", "reject_input")).toEqual([{ kind: "escape" }]);
+    expect(decodeTerminalInput("", "reject_input")).toEqual([{ kind: "escape" }]);
   });
 });
 
 describe("createTuiRuntime", () => {
-  it("uses the selected approval thread for the initial screen state when pending approvals exist", () => {
+  it("uses the selected approval thread for the initial screen state when pending approvals exist", async () => {
     const runtime = createTuiRuntime({
       app: {
         resumeApproval: vi.fn(),
         rejectApproval: vi.fn(),
       },
       taskService: {
-        listThreads: () => [
-          { id: "thread-1", fromUserId: "wxid_admin", title: "Failed thread", status: "failed" },
-          { id: "thread-2", fromUserId: "wxid_admin", title: "Waiting thread", status: "waiting_approval" },
-        ],
-        listApprovals: () => [
-          {
-            id: "approval-1",
-            threadId: "thread-2",
-            status: "pending",
-            action: { tool: "fs.write", input: {} },
-            reply: "write config",
-          },
-        ],
-        listEvents: (threadId: string) => threadId === "thread-2"
-          ? [{ kind: "approval.requested", summary: "approval.requested: write config" }]
-          : [{ kind: "thread.failed", summary: "thread.failed: too risky" }],
+        async listThreads() {
+          return [
+            { id: "thread-1", fromUserId: "wxid_admin", title: "Failed thread", status: "failed" },
+            { id: "thread-2", fromUserId: "wxid_admin", title: "Waiting thread", status: "waiting_approval" },
+          ];
+        },
+        async listApprovals() {
+          return [
+            {
+              id: "approval-1",
+              threadId: "thread-2",
+              status: "pending",
+              action: { tool: "fs.write", input: {} },
+              reply: "write config",
+            },
+          ];
+        },
+        async listEvents(threadId: string) {
+          return threadId === "thread-2"
+            ? [{ kind: "approval.requested", summary: "approval.requested: write config" }]
+            : [{ kind: "thread.failed", summary: "thread.failed: too risky" }];
+        },
       },
     });
 
-    const state = runtime.buildScreenState();
+    const state = await runtime.buildScreenState();
 
     expect(state.threadItems.find((thread) => thread.id === "thread-2")?.isSelected).toBe(true);
     expect(state.eventItems).toEqual([
@@ -184,19 +190,25 @@ describe("createTuiRuntime", () => {
         rejectApproval: vi.fn(),
       },
       taskService: {
-        listThreads: () => [
-          { id: "thread-2", fromUserId: "wxid_admin", title: "Waiting thread", status: "waiting_approval" },
-        ],
-        listApprovals: () => [
-          {
-            id: "approval-1",
-            threadId: "thread-2",
-            status: "pending",
-            action: { tool: "fs.write", input: {} },
-            reply: "write config",
-          },
-        ],
-        listEvents: () => [{ kind: "approval.requested", summary: "approval.requested: write config" }],
+        async listThreads() {
+          return [
+            { id: "thread-2", fromUserId: "wxid_admin", title: "Waiting thread", status: "waiting_approval" },
+          ];
+        },
+        async listApprovals() {
+          return [
+            {
+              id: "approval-1",
+              threadId: "thread-2",
+              status: "pending",
+              action: { tool: "fs.write", input: {} },
+              reply: "write config",
+            },
+          ];
+        },
+        async listEvents() {
+          return [{ kind: "approval.requested", summary: "approval.requested: write config" }];
+        },
       },
     });
 
@@ -205,26 +217,29 @@ describe("createTuiRuntime", () => {
     expect(resumeApproval).toHaveBeenCalledWith("approval-1");
   });
 
-  it("falls back to the latest waiting_approval thread when no approval is selected", () => {
+  it("falls back to the latest waiting_approval thread when no approval is selected", async () => {
     const runtime = createTuiRuntime({
       app: {
         resumeApproval: vi.fn(),
         rejectApproval: vi.fn(),
       },
       taskService: {
-        listThreads: () => [
-          { id: "thread-1", fromUserId: "wxid_admin", title: "Older waiting thread", status: "waiting_approval" },
-          { id: "thread-2", fromUserId: "wxid_admin", title: "Latest waiting thread", status: "waiting_approval" },
-        ],
-        listApprovals: () => [],
-        listEvents: (threadId: string) => [{
-          kind: "approval.requested",
-          summary: `approval.requested: ${threadId}`,
-        }],
+        async listThreads() {
+          return [
+            { id: "thread-1", fromUserId: "wxid_admin", title: "Older waiting thread", status: "waiting_approval" },
+            { id: "thread-2", fromUserId: "wxid_admin", title: "Latest waiting thread", status: "waiting_approval" },
+          ];
+        },
+        async listApprovals() {
+          return [];
+        },
+        async listEvents(threadId: string) {
+          return [{ kind: "approval.requested", summary: `approval.requested: ${threadId}` }];
+        },
       },
     });
 
-    const state = runtime.buildScreenState();
+    const state = await runtime.buildScreenState();
 
     expect(state.threadItems.find((thread) => thread.id === "thread-2")?.isSelected).toBe(true);
     expect(state.eventItems).toEqual([
@@ -232,26 +247,29 @@ describe("createTuiRuntime", () => {
     ]);
   });
 
-  it("falls back to the latest failed thread when neither approvals nor waiting threads exist", () => {
+  it("falls back to the latest failed thread when neither approvals nor waiting threads exist", async () => {
     const runtime = createTuiRuntime({
       app: {
         resumeApproval: vi.fn(),
         rejectApproval: vi.fn(),
       },
       taskService: {
-        listThreads: () => [
-          { id: "thread-1", fromUserId: "wxid_admin", title: "Older failed thread", status: "failed" },
-          { id: "thread-2", fromUserId: "wxid_admin", title: "Latest failed thread", status: "failed" },
-        ],
-        listApprovals: () => [],
-        listEvents: (threadId: string) => [{
-          kind: "thread.failed",
-          summary: `thread.failed: ${threadId}`,
-        }],
+        async listThreads() {
+          return [
+            { id: "thread-1", fromUserId: "wxid_admin", title: "Older failed thread", status: "failed" },
+            { id: "thread-2", fromUserId: "wxid_admin", title: "Latest failed thread", status: "failed" },
+          ];
+        },
+        async listApprovals() {
+          return [];
+        },
+        async listEvents(threadId: string) {
+          return [{ kind: "thread.failed", summary: `thread.failed: ${threadId}` }];
+        },
       },
     });
 
-    const state = runtime.buildScreenState();
+    const state = await runtime.buildScreenState();
 
     expect(state.threadItems.find((thread) => thread.id === "thread-2")?.isSelected).toBe(true);
     expect(state.eventItems).toEqual([

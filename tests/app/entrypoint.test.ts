@@ -1,11 +1,40 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { createDefaultEntrypoint } from "../../src/app/entrypoint.js";
 import { bootstrapApplication } from "../../src/app/bootstrap.js";
 import { createTuiRuntime } from "../../src/tui/runtime.js";
 import { runMainEntrypoint } from "../../src/main-entrypoint.js";
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import type { DbPool } from "../../src/store/db.js";
+import { TEST_DATABASE_URL, cleanTables, createHelperPool } from "../helpers/pg.js";
+
+const baseEnv = {
+  ADMIN_USER_ID: "wxid_admin",
+  WORKSPACE_ROOT: "/workspace",
+  LLM_BASE_URL: "http://localhost:11434/v1",
+  LLM_MODEL: "qwen2.5-coder",
+  LLM_API_KEY: "",
+  LLM_SUPPORTS_IMAGE_INPUT: "false",
+  DATABASE_URL: TEST_DATABASE_URL,
+};
+
+let helperPool: DbPool;
+const pools: DbPool[] = [];
+
+beforeAll(async () => {
+  helperPool = await createHelperPool();
+});
+
+beforeEach(async () => {
+  await cleanTables(helperPool);
+});
+
+afterEach(async () => {
+  await Promise.all(pools.map((p) => p.end()));
+  pools.length = 0;
+});
+
+afterAll(async () => {
+  await helperPool.end();
+});
 
 describe("runMainEntrypoint", () => {
   it("prints classified startup failures to stderr", async () => {
@@ -30,7 +59,7 @@ describe("runMainEntrypoint", () => {
     const startTuiRuntime = vi.fn();
 
     const exitCode = await runMainEntrypoint({
-      env: { ADMIN_USER_ID: "wxid_admin" },
+      env: { ...baseEnv },
       stdout: { write: vi.fn() },
       stderr: { write: vi.fn() },
       bootstrapApplication: vi.fn().mockResolvedValue({
@@ -51,84 +80,58 @@ describe("runMainEntrypoint", () => {
   });
 
   it("surfaces persisted pending approvals to the TUI after restart through the main runtime path", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "wechat-claw-main-entrypoint-"));
-    const dbPath = join(tempDir, "entrypoint.db");
     const startTuiRuntime = vi.fn();
 
-    try {
-      const writer = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    const writer = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(writer.db);
 
-      const { threadId } = writer.taskService.receiveMessage({
-        fromUserId: "wxid_admin",
-        text: "write config",
-      });
-      const { approvalId } = writer.taskService.createApprovalRequest(
-        threadId,
-        { tool: "fs.write", input: { path: "/workspace/app.json", contents: "{}" } },
-        "write config",
-      );
-      writer.taskService.markWaitingApproval(threadId, {
-        tool: "fs.write",
-        summary: "write config",
-      });
+    const { threadId } = await writer.taskService.receiveMessage({
+      fromUserId: "wxid_admin",
+      text: "write config",
+    });
+    const { approvalId } = await writer.taskService.createApprovalRequest(
+      threadId,
+      { tool: "fs.write", input: { path: "/workspace/app.json", contents: "{}" } },
+      "write config",
+    );
+    await writer.taskService.markWaitingApproval(threadId, {
+      tool: "fs.write",
+      summary: "write config",
+    });
 
-      const exitCode = await runMainEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-        stdout: { write: vi.fn() },
-        stderr: { write: vi.fn() },
-        startTuiRuntime,
-      });
+    const exitCode = await runMainEntrypoint({
+      env: baseEnv,
+      stdout: { write: vi.fn() },
+      stderr: { write: vi.fn() },
+      startTuiRuntime,
+      bootstrapApplication: async (input) => {
+        const runtime = await bootstrapApplication(input);
+        pools.push(runtime.db);
+        return runtime;
+      },
+    });
 
-      expect(exitCode).toBe(0);
-      expect(startTuiRuntime).toHaveBeenCalledTimes(1);
-      expect(startTuiRuntime.mock.calls[0]?.[0].taskService.listApprovals()).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            id: approvalId,
-            threadId,
-            status: "pending",
-            reply: "write config",
-          }),
-        ]),
-      );
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+    expect(exitCode).toBe(0);
+    expect(startTuiRuntime).toHaveBeenCalledTimes(1);
+    const tuiApprovals = await startTuiRuntime.mock.calls[0]?.[0].taskService.listApprovals();
+    expect(tuiApprovals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: approvalId,
+          threadId,
+          status: "pending",
+          reply: "write config",
+        }),
+      ]),
+    );
   });
 });
 
 describe("createDefaultEntrypoint", () => {
 
-  it("builds a runnable app and gateway from env", () => {
-    const entry = createDefaultEntrypoint({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
-    });
+  it("builds a runnable app and gateway from env", async () => {
+    const entry = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(entry.db);
 
     expect(entry.app).toBeDefined();
     expect(entry.gateway).toBeDefined();
@@ -153,17 +156,8 @@ describe("createDefaultEntrypoint", () => {
     });
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const entry = createDefaultEntrypoint({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
-    });
+    const entry = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(entry.db);
 
     try {
       await entry.gateway.handleInbound({
@@ -178,92 +172,65 @@ describe("createDefaultEntrypoint", () => {
     }
   });
 
-  it("builds an app and gateway that can support approval-required smoke flows", () => {
-    const entry = createDefaultEntrypoint({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
-    });
+  it("builds an app and gateway that can support approval-required smoke flows", async () => {
+    const entry = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(entry.db);
 
     expect(entry.app).toBeDefined();
     expect(entry.gateway).toBeDefined();
     expect(entry.taskService).toBeDefined();
   });
 
-  it("wires smoke composition to SQLite-backed repositories", () => {
-    const entry = createDefaultEntrypoint({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
-    });
+  it("wires smoke composition to database-backed repositories", async () => {
+    const entry = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(entry.db);
 
     entry.setCurrentMessage({
       fromUserId: "wxid_user",
       text: "test message",
     });
 
-    const result = entry.taskService.receiveMessage({
+    const result = await entry.taskService.receiveMessage({
       fromUserId: "wxid_user",
       text: "test message",
     });
 
     expect(result.threadId).toBeDefined();
 
-    const thread = entry.taskService.getThread(result.threadId);
+    const thread = await entry.taskService.getThread(result.threadId);
     expect(thread).toBeDefined();
     expect(thread?.fromUserId).toBe("wxid_user");
     expect(thread?.status).toBe("queued");
   });
 
-  it("persists approval requests to SQLite", () => {
-    const entry = createDefaultEntrypoint({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
-    });
+  it("persists approval requests to database", async () => {
+    const entry = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(entry.db);
 
     entry.setCurrentMessage({
       fromUserId: "wxid_user",
       text: "test message",
     });
 
-    const { threadId } = entry.taskService.receiveMessage({
+    const { threadId } = await entry.taskService.receiveMessage({
       fromUserId: "wxid_user",
       text: "test message",
     });
 
-    const { approvalId } = entry.taskService.createApprovalRequest(threadId, {
+    const { approvalId } = await entry.taskService.createApprovalRequest(threadId, {
       tool: "shell.exec",
       input: { command: "echo test" },
     }, "Execute shell command?");
 
     expect(approvalId).toBeDefined();
 
-    const approval = entry.taskService.getPendingApproval(approvalId);
+    const approval = await entry.taskService.getPendingApproval(approvalId);
     expect(approval).toBeDefined();
     expect(approval?.status).toBe("pending");
     expect(approval?.action.tool).toBe("shell.exec");
 
-    entry.taskService.markApproved(approvalId);
-    const approvedApproval = entry.taskService.getPendingApproval(approvalId);
+    await entry.taskService.markApproved(approvalId);
+    const approvedApproval = await entry.taskService.getPendingApproval(approvalId);
     expect(approvedApproval?.status).toBe("approved");
   });
 
@@ -287,17 +254,8 @@ describe("createDefaultEntrypoint", () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     try {
-      const entry = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: ":memory:",
-        },
-      });
+      const entry = await createDefaultEntrypoint({ env: baseEnv });
+      pools.push(entry.db);
 
       entry.setCurrentMessage({
         fromUserId: "wxid_admin",
@@ -319,306 +277,201 @@ describe("createDefaultEntrypoint", () => {
     }
   });
 
-  it("uses configured DATABASE_PATH for persistent sqlite state", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "wechat-claw-entrypoint-"));
-    const dbPath = join(tempDir, "entrypoint.db");
+  it("uses configured DATABASE_URL for persistent state", async () => {
+    const writer = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(writer.db);
 
-    try {
-      const writer = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
-
-      const { threadId } = writer.taskService.receiveMessage({
-        fromUserId: "wxid_user",
-        text: "persist this",
-      });
-
-      writer.taskService.markWaitingApproval(threadId);
-
-      const reader = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
-
-      const persisted = reader.taskService.getThread(threadId);
-      expect(persisted).toBeDefined();
-      expect(persisted?.status).toBe("waiting_approval");
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  it("reuses the same thread for a second message after waiting approval with sqlite repositories", () => {
-    const entry = createDefaultEntrypoint({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
+    const { threadId } = await writer.taskService.receiveMessage({
+      fromUserId: "wxid_user",
+      text: "persist this",
     });
 
-    const first = entry.taskService.receiveMessage({
+    await writer.taskService.markWaitingApproval(threadId);
+
+    const reader = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(reader.db);
+
+    const persisted = await reader.taskService.getThread(threadId);
+    expect(persisted).toBeDefined();
+    expect(persisted?.status).toBe("waiting_approval");
+  });
+
+  it("reuses the same thread for a second message after waiting approval", async () => {
+    const entry = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(entry.db);
+
+    const first = await entry.taskService.receiveMessage({
       fromUserId: "wxid_user",
       text: "first message",
     });
 
-    entry.taskService.markWaitingApproval(first.threadId);
+    await entry.taskService.markWaitingApproval(first.threadId);
 
-    const second = entry.taskService.receiveMessage({
+    const second = await entry.taskService.receiveMessage({
       fromUserId: "wxid_user",
       text: "follow up message",
     });
 
     expect(second.threadId).toBe(first.threadId);
-    expect(entry.taskService.getThread(first.threadId)?.status).toBe("waiting_approval");
+    expect((await entry.taskService.getThread(first.threadId))?.status).toBe("waiting_approval");
   });
 
-  it("reuses a persisted waiting_approval thread after recreating the entrypoint", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "wechat-claw-entrypoint-"));
-    const dbPath = join(tempDir, "entrypoint.db");
+  it("reuses a persisted waiting_approval thread after recreating the entrypoint", async () => {
+    const writer = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(writer.db);
 
-    try {
-      const writer = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    const first = await writer.taskService.receiveMessage({
+      fromUserId: "wxid_user",
+      text: "persist this",
+    });
+    await writer.taskService.markWaitingApproval(first.threadId);
 
-      const first = writer.taskService.receiveMessage({
-        fromUserId: "wxid_user",
-        text: "persist this",
-      });
-      writer.taskService.markWaitingApproval(first.threadId);
+    const reader = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(reader.db);
 
-      const reader = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    const second = await reader.taskService.receiveMessage({
+      fromUserId: "wxid_user",
+      text: "follow up",
+    });
 
-      const second = reader.taskService.receiveMessage({
-        fromUserId: "wxid_user",
-        text: "follow up",
-      });
-
-      expect(second.threadId).toBe(first.threadId);
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+    expect(second.threadId).toBe(first.threadId);
   });
 
   it("resumes a persisted approval after recreating the entrypoint", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "wechat-claw-entrypoint-"));
-    const dbPath = join(tempDir, "entrypoint.db");
+    const writer = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(writer.db);
 
-    try {
-      const writer = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    const { threadId } = await writer.taskService.receiveMessage({
+      fromUserId: "wxid_admin",
+      text: "run pwd",
+    });
+    const { approvalId } = await writer.taskService.createApprovalRequest(
+      threadId,
+      { tool: "shell.exec", input: { command: "pwd" } },
+      "Need approval.",
+    );
+    await writer.taskService.markWaitingApproval(threadId, { tool: "shell.exec", summary: "Need approval." });
 
-      const { threadId } = writer.taskService.receiveMessage({
-        fromUserId: "wxid_admin",
-        text: "run pwd",
-      });
-      const { approvalId } = writer.taskService.createApprovalRequest(
-        threadId,
-        { tool: "shell.exec", input: { command: "pwd" } },
-        "Need approval.",
-      );
-      writer.taskService.markWaitingApproval(threadId, { tool: "shell.exec", summary: "Need approval." });
+    const reader = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(reader.db);
 
-      const reader = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    await reader.app.resumeApproval(approvalId);
 
-      await reader.app.resumeApproval(approvalId);
-
-      expect(reader.taskService.getPendingApproval(approvalId)?.status).toBe("approved");
-      expect(reader.taskService.getThread(threadId)?.status).toBe("done");
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+    expect((await reader.taskService.getPendingApproval(approvalId))?.status).toBe("approved");
+    expect((await reader.taskService.getThread(threadId))?.status).toBe("done");
   });
 
   it("rejects a persisted approval after recreating the entrypoint", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "wechat-claw-entrypoint-"));
-    const dbPath = join(tempDir, "entrypoint.db");
+    const writer = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(writer.db);
 
-    try {
-      const writer = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    const { threadId } = await writer.taskService.receiveMessage({
+      fromUserId: "wxid_admin",
+      text: "run dangerous command",
+    });
+    const { approvalId } = await writer.taskService.createApprovalRequest(
+      threadId,
+      { tool: "shell.exec", input: { command: "rm -rf /tmp/demo" } },
+      "Need approval.",
+    );
+    await writer.taskService.markWaitingApproval(threadId, { tool: "shell.exec", summary: "Need approval." });
 
-      const { threadId } = writer.taskService.receiveMessage({
-        fromUserId: "wxid_admin",
-        text: "run dangerous command",
-      });
-      const { approvalId } = writer.taskService.createApprovalRequest(
-        threadId,
-        { tool: "shell.exec", input: { command: "rm -rf /tmp/demo" } },
-        "Need approval.",
-      );
-      writer.taskService.markWaitingApproval(threadId, { tool: "shell.exec", summary: "Need approval." });
+    const reader = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(reader.db);
 
-      const reader = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    await reader.app.rejectApproval(approvalId, "too risky");
 
-      await reader.app.rejectApproval(approvalId, "too risky");
-
-      expect(reader.taskService.getPendingApproval(approvalId)?.status).toBe("rejected");
-      expect(reader.taskService.getThread(threadId)?.status).toBe("failed");
-      expect(reader.taskService.listEvents(threadId)).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ kind: "approval.rejected", summary: "too risky" }),
-          expect.objectContaining({ kind: "thread.failed", summary: "too risky" }),
-        ]),
-      );
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+    expect((await reader.taskService.getPendingApproval(approvalId))?.status).toBe("rejected");
+    expect((await reader.taskService.getThread(threadId))?.status).toBe("failed");
+    expect(await reader.taskService.listEvents(threadId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "approval.rejected", summary: "too risky" }),
+        expect.objectContaining({ kind: "thread.failed", summary: "too risky" }),
+      ]),
+    );
   });
 
-  it("rebuilds the same cold-start recovery view after recreating the entrypoint", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "wechat-claw-entrypoint-"));
-    const dbPath = join(tempDir, "entrypoint.db");
+  it("rebuilds the same cold-start recovery view after recreating the entrypoint", async () => {
+    const writer = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(writer.db);
 
-    try {
-      const writer = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
+    const { threadId } = await writer.taskService.receiveMessage({
+      fromUserId: "wxid_admin",
+      text: "write config",
+    });
+    await writer.taskService.createApprovalRequest(
+      threadId,
+      { tool: "fs.write", input: { path: "/workspace/app.json", contents: "{}" } },
+      "write config",
+    );
+    await writer.taskService.markWaitingApproval(threadId, {
+      tool: "fs.write",
+      summary: "write config",
+    });
 
-      const { threadId } = writer.taskService.receiveMessage({
-        fromUserId: "wxid_admin",
-        text: "write config",
-      });
-      writer.taskService.createApprovalRequest(
-        threadId,
-        { tool: "fs.write", input: { path: "/workspace/app.json", contents: "{}" } },
-        "write config",
-      );
-      writer.taskService.markWaitingApproval(threadId, {
-        tool: "fs.write",
-        summary: "write config",
-      });
+    const reader = await createDefaultEntrypoint({ env: baseEnv });
+    pools.push(reader.db);
+    const runtime = createTuiRuntime({
+      app: reader.app,
+      taskService: reader.taskService,
+    });
 
-      const reader = createDefaultEntrypoint({
-        env: {
-          ADMIN_USER_ID: "wxid_admin",
-          WORKSPACE_ROOT: "/workspace",
-          LLM_BASE_URL: "http://localhost:11434/v1",
-          LLM_MODEL: "qwen2.5-coder",
-          LLM_API_KEY: "",
-          LLM_SUPPORTS_IMAGE_INPUT: "false",
-          DATABASE_PATH: dbPath,
-        },
-      });
-      const runtime = createTuiRuntime({
-        app: reader.app,
-        taskService: reader.taskService,
-      });
+    const state = await runtime.buildScreenState();
 
-      const state = runtime.buildScreenState();
-
-      expect(state.recoveryBannerText).toBe("Recovered pending approvals from the previous run.");
-      expect(state.recoveryHintText).toBe("Approve or reject a recovered approval to continue.");
-      expect(state.threadItems.find((thread) => thread.id === threadId)?.isSelected).toBe(true);
-      expect(state.eventItems).toEqual([
-        { id: `${threadId}:approval.requested:0`, summary: "write config" },
-      ]);
-    } finally {
-      rmSync(tempDir, { recursive: true, force: true });
-    }
+    expect(state.recoveryBannerText).toBe("Recovered pending approvals from the previous run.");
+    expect(state.recoveryHintText).toBe("Approve or reject a recovered approval to continue.");
+    expect(state.threadItems.find((thread) => thread.id === threadId)?.isSelected).toBe(true);
+    expect(state.eventItems).toEqual([
+      { id: `${threadId}:approval.requested:0`, summary: "write config" },
+    ]);
   });
 });
 
 describe("bootstrapApplication", () => {
   it("returns a startable runtime with gateway and app", async () => {
-    const runtime = await bootstrapApplication({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
-    });
+    const runtime = await bootstrapApplication({ env: baseEnv });
+    pools.push(runtime.db);
 
     expect(runtime.start).toBeTypeOf("function");
     expect(runtime.app).toBeDefined();
     expect(runtime.gateway).toBeDefined();
+  });
+
+  it("classifies missing config as a startup config error", async () => {
+    await expect(bootstrapApplication({ env: {} })).rejects.toMatchObject({
+      category: "config",
+      message: expect.stringContaining("Missing required config:"),
+    });
+  });
+
+  it("classifies provider startup failures", async () => {
+    await expect(bootstrapApplication({
+      env: baseEnv,
+      createDefaultEntrypoint: () => {
+        throw new Error("openai provider request failed: ECONNREFUSED");
+      },
+    })).rejects.toMatchObject({
+      category: "provider",
+      message: "openai provider request failed: ECONNREFUSED",
+    });
+  });
+
+  it("composes entrypoint with bootstrap config to create startable runtime", async () => {
+    const result = await bootstrapApplication({ env: baseEnv });
+    pools.push(result.db);
+
+    expect(result).toHaveProperty("app");
+    expect(result).toHaveProperty("gateway");
+    expect(result).toHaveProperty("config");
+    expect(result.config.workspaceRoot).toBe("/workspace");
+  });
+
+  it("exposes taskService for approval-resume smoke flows", async () => {
+    const result = await bootstrapApplication({ env: baseEnv });
+    pools.push(result.db);
+
+    expect(result).toHaveProperty("taskService");
+    expect(result.taskService).toHaveProperty("receiveMessage");
+    expect(result.taskService).toHaveProperty("getPendingApproval");
   });
 });

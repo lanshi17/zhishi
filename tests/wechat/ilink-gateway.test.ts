@@ -21,6 +21,7 @@ describe("createIlinkWeChatGateway", () => {
       sendMessage: vi.fn(),
       getQrCode: vi.fn(),
       getQrCodeStatus: vi.fn(),
+      downloadImage: vi.fn(),
     };
 
     const gw = createIlinkWeChatGateway({
@@ -48,6 +49,7 @@ describe("createIlinkWeChatGateway", () => {
       sendMessage: vi.fn(),
       getQrCode: vi.fn(),
       getQrCodeStatus: vi.fn(),
+      downloadImage: vi.fn(),
     };
 
     const gw = createIlinkWeChatGateway({
@@ -72,6 +74,7 @@ describe("createIlinkWeChatGateway", () => {
       sendMessage: vi.fn(),
       getQrCode: vi.fn(),
       getQrCodeStatus: vi.fn(),
+      downloadImage: vi.fn(),
     };
 
     const gw = createIlinkWeChatGateway({

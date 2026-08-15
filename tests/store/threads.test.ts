@@ -1,31 +1,42 @@
-import { describe, expect, it } from "vitest";
-import { createInMemoryDatabase } from "../../src/store/db.js";
+import { describe, expect, it, beforeAll, afterAll, beforeEach } from "vitest";
+import { createTestPgPool, type DbPool } from "../../src/store/db.js";
 import { ThreadRepository } from "../../src/store/repositories/threads.js";
+import { TEST_DATABASE_URL, cleanTables, createHelperPool } from "../helpers/pg.js";
 
 describe("ThreadRepository", () => {
-  it("creates a thread and appends an event", () => {
-    const db = createInMemoryDatabase();
-    const repo = new ThreadRepository(db);
+  let pool: DbPool;
+  let repo: ThreadRepository;
 
-    const thread = repo.create({ sourceUserId: "wxid_admin", title: "Fix tests" });
-    repo.appendEvent(thread.id, { kind: "message.received", summary: "please fix tests" });
-
-    expect(repo.get(thread.id)?.title).toBe("Fix tests");
-    expect(repo.listEvents(thread.id)).toHaveLength(1);
+  beforeAll(async () => {
+    pool = await createTestPgPool(TEST_DATABASE_URL);
   });
 
-  it("persists thread status and events", () => {
-    const db = createInMemoryDatabase();
-    const repo = new ThreadRepository(db);
+  beforeEach(async () => {
+    await cleanTables(pool);
+    repo = new ThreadRepository(pool);
+  });
 
-    const thread = repo.create({ sourceUserId: "wxid_admin", title: "Run smoke flow" });
-    repo.updateStatus(thread.id, "waiting_approval");
-    repo.appendEvent(thread.id, { kind: "approval.requested", summary: "shell.exec approval required" });
+  afterAll(async () => {
+    await pool.end();
+  });
 
-    expect(repo.get(thread.id)).toEqual(
+  it("creates a thread and appends an event", async () => {
+    const thread = await repo.create({ sourceUserId: "wxid_admin", title: "Fix tests" });
+    await repo.appendEvent(thread.id, { kind: "message.received", summary: "please fix tests" });
+
+    expect((await repo.get(thread.id))?.title).toBe("Fix tests");
+    expect(await repo.listEvents(thread.id)).toHaveLength(1);
+  });
+
+  it("persists thread status and events", async () => {
+    const thread = await repo.create({ sourceUserId: "wxid_admin", title: "Run smoke flow" });
+    await repo.updateStatus(thread.id, "waiting_approval");
+    await repo.appendEvent(thread.id, { kind: "approval.requested", summary: "shell.exec approval required" });
+
+    expect(await repo.get(thread.id)).toEqual(
       expect.objectContaining({ id: thread.id, status: "waiting_approval" }),
     );
-    expect(repo.listEvents(thread.id)).toEqual([
+    expect(await repo.listEvents(thread.id)).toEqual([
       expect.objectContaining({ kind: "approval.requested", summary: "shell.exec approval required" }),
     ]);
   });

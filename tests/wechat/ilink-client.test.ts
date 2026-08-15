@@ -67,6 +67,7 @@ describe("createIlinkClient", () => {
 
     await client.sendMessage({
       to_user_id: "user1@im.wechat",
+      client_id: "mmassistant_inbox_123",
       context_token: "ctx-123",
       item_list: [{ type: 1, text_item: { text: "reply" } }],
     });
@@ -74,10 +75,13 @@ describe("createIlinkClient", () => {
     const [, options] = fetchMock.mock.calls[0];
     const body = JSON.parse(options.body as string);
     expect(body.msg.to_user_id).toBe("user1@im.wechat");
-        expect(body.msg.message_type).toBe(1);
-    expect(body.msg.message_state).toBe(1);
+    expect(body.msg.from_user_id).toBe("");
+    expect(body.msg.client_id).toBe("mmassistant_inbox_123");
+    expect(body.msg.message_type).toBe(2);
+    expect(body.msg.message_state).toBe(2);
     expect(body.msg.context_token).toBe("ctx-123");
     expect(body.msg.item_list[0].text_item.text).toBe("reply");
+    expect(body.base_info).toEqual({ channel_version: "1.0.2" });
   });
 
   it("throws on non-2xx response", async () => {

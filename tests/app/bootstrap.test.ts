@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createBootstrapConfig, bootstrapApplication } from "../../src/app/bootstrap.js";
+import { TEST_DATABASE_URL } from "../helpers/pg.js";
 
 const validEnv = {
   ADMIN_USER_ID: "wxid_admin",
@@ -8,7 +9,7 @@ const validEnv = {
   LLM_MODEL: "qwen2.5-coder",
   LLM_API_KEY: "",
   LLM_SUPPORTS_IMAGE_INPUT: "false",
-  DATABASE_PATH: ":memory:",
+  DATABASE_URL: TEST_DATABASE_URL,
 };
 
 
@@ -44,38 +45,26 @@ describe("bootstrapApplication", () => {
 
   it("composes entrypoint with bootstrap config to create startable runtime", async () => {
     const result = await bootstrapApplication({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
+      env: validEnv,
     });
 
     expect(result).toHaveProperty("app");
     expect(result).toHaveProperty("gateway");
     expect(result).toHaveProperty("config");
     expect(result.config.workspaceRoot).toBe("/workspace");
+
+    await result.db.end();
   });
 
   it("exposes taskService for approval-resume smoke flows", async () => {
     const result = await bootstrapApplication({
-      env: {
-        ADMIN_USER_ID: "wxid_admin",
-        WORKSPACE_ROOT: "/workspace",
-        LLM_BASE_URL: "http://localhost:11434/v1",
-        LLM_MODEL: "qwen2.5-coder",
-        LLM_API_KEY: "",
-        LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: ":memory:",
-      },
+      env: validEnv,
     });
 
     expect(result).toHaveProperty("taskService");
     expect(result.taskService).toHaveProperty("receiveMessage");
     expect(result.taskService).toHaveProperty("getPendingApproval");
+
+    await result.db.end();
   });
 });

@@ -12,6 +12,9 @@ describe("AgentRuntime", () => {
             actions: [{ tool: "web.search", input: { query: "rustls" } }],
           };
         },
+        async chat() {
+          return { kind: "final", content: "" };
+        },
       },
     });
 
@@ -43,6 +46,6 @@ describe("AgentRuntime", () => {
     const runtime = createAgentRuntime({ provider });
     const result = await runtime.planNext({ threadId: "t-http", prompt: "say hello" });
 
-    expect(result).toEqual({ reply: "runtime hello", actions: [] });
+    expect(result).toEqual({ reply: "runtime hello", actions: [], rawContent: "runtime hello" });
   });
 });

@@ -48,9 +48,9 @@ type TuiTaskEvent = {
 };
 
 type TuiTaskService = {
-  listThreads(): TuiThread[];
-  listApprovals(): TuiApproval[];
-  listEvents(threadId: string): TuiTaskEvent[];
+  listThreads(): Promise<TuiThread[]>;
+  listApprovals(): Promise<TuiApproval[]>;
+  listEvents(threadId: string): Promise<TuiTaskEvent[]>;
 };
 
 type TuiInputStream = {
@@ -120,11 +120,11 @@ function findSelectedThreadId(input: {
 export function decodeTerminalInput(input: Buffer | string, mode: TuiMode = "browse"): TuiInput[] {
   const chunk = typeof input === "string" ? input : input.toString("utf8");
 
-  if (chunk === "\u001b[A") {
+  if (chunk === "[A") {
     return [{ kind: "up" }];
   }
 
-  if (chunk === "\u001b[B") {
+  if (chunk === "[B") {
     return [{ kind: "down" }];
   }
 
@@ -132,15 +132,15 @@ export function decodeTerminalInput(input: Buffer | string, mode: TuiMode = "bro
     return [{ kind: "submit" }];
   }
 
-  if (chunk === "\u001b") {
+  if (chunk === "") {
     return [{ kind: "escape" }];
   }
 
-  if (chunk === "\u0003") {
+  if (chunk === "") {
     return [{ kind: "quit" }];
   }
 
-  if (chunk === "\u007f") {
+  if (chunk === "") {
     return [{ kind: "backspace" }];
   }
 
@@ -269,7 +269,7 @@ export function createTuiController(input: { app: TuiAppActions }) {
 }
 
 function clearScreen(output: TuiOutputStream) {
-  output.write("\u001b[2J\u001b[H");
+  output.write("[2J[H");
 }
 
 export function createTuiRuntime(input: {
@@ -282,9 +282,9 @@ export function createTuiRuntime(input: {
   const stdin = input.stdin ?? process.stdin;
   const stdout = input.stdout ?? process.stdout;
 
-  const buildScreenState = (): MainScreenState => {
-    const threads = input.taskService.listThreads();
-    const approvals = buildApprovalItems(input.taskService.listApprovals());
+  const buildScreenState = async (): Promise<MainScreenState> => {
+    const threads = await input.taskService.listThreads();
+    const approvals = buildApprovalItems(await input.taskService.listApprovals());
     const selectedThreadId = findSelectedThreadId({
       threads,
       approvals,
@@ -293,22 +293,26 @@ export function createTuiRuntime(input: {
     const eventsByThread: Record<string, EventLogItem[]> = {};
 
     if (selectedThreadId) {
-      eventsByThread[selectedThreadId] = input.taskService.listEvents(selectedThreadId).map((event, index) => ({
+      const events = await input.taskService.listEvents(selectedThreadId);
+      eventsByThread[selectedThreadId] = events.map((event, index) => ({
         id: `${selectedThreadId}:${event.kind}:${index}`,
         summary: event.summary,
       }));
     }
 
+    const threadsWithEvents = [];
+    for (const thread of threads) {
+      const events = await input.taskService.listEvents(thread.id);
+      threadsWithEvents.push({
+        id: thread.id,
+        title: thread.title,
+        status: thread.status,
+        latestEventSummary: events.at(-1)?.summary,
+      });
+    }
+
     return buildMainViewModel({
-      threads: threads.map((thread) => {
-        const latestEvent = input.taskService.listEvents(thread.id).at(-1);
-        return {
-          id: thread.id,
-          title: thread.title,
-          status: thread.status,
-          latestEventSummary: latestEvent?.summary,
-        };
-      }),
+      threads: threadsWithEvents,
       approvals,
       eventsByThread,
       selectedThreadId,
@@ -316,8 +320,8 @@ export function createTuiRuntime(input: {
     });
   };
 
-  const render = () => {
-    const state = buildScreenState();
+  const render = async () => {
+    const state = await buildScreenState();
     clearScreen(stdout);
     stdout.write(`${renderMainScreen(state)}\n`);
     return state;
@@ -329,7 +333,7 @@ export function createTuiRuntime(input: {
       return buildScreenState();
     }
 
-    const approvals = buildApprovalItems(input.taskService.listApprovals());
+    const approvals = buildApprovalItems(await input.taskService.listApprovals());
     await controller.handleInput(inputEvent, approvals);
     return render();
   };

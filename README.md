@@ -1,21 +1,36 @@
 # WeChat Claw
 
-一个基于 TypeScript 的单机 WeChat Agent MVP，用微信作为远程控制入口，用本地 TUI 作为操作台，目标是把“消息输入 → 规划 → 工具执行 → 审批 → 结果回传”交付成一个内部同事可直接安装、配置、启动和重启恢复的运行时。
+个人健康热量追踪助手 —— 通过微信发送自然语言记录每日饮食摄入与运动消耗，使用 LightRAG 知识库查询精确热量数据，自动生成日/周/月/季/年热量报告。
 
-A single-machine TypeScript WeChat agent MVP that uses WeChat as the remote control surface and a local TUI as the operator console. The goal is to ship “message input → planning → tool execution → approval → result delivery” as a runtime another internal engineer can install, configure, start, and recover after restart.
+A personal health calorie tracking assistant. Users send natural language via WeChat to record daily diet and exercise. An agent pipeline parses intents, queries a LightRAG knowledge base for accurate calorie data, persists records to PostgreSQL, and generates periodic reports.
+
+## Architecture
+
+```
+WeChat Message → iLink Gateway → Health Pipeline → PostgreSQL
+                                     ↓
+                              LightRAG Knowledge Base
+                                     ↓
+                              Reply Formatter → WeChat Reply
+```
+
+**5-stage pipeline:**
+1. Intent classification + entity extraction (LLM)
+2. Knowledge base retrieval (LightRAG)
+3. Merge knowledge results into entities
+4. Action execution (PostgreSQL persistence)
+5. Reply formatting
 
 ## Install
 
 ```bash
-npm install
+pnpm install
 ```
-
-If you prefer pnpm, `pnpm install` works too.
 
 ## Configure
 
 1. Copy the example env file.
-2. Replace the placeholders with values for your machine.
+2. Replace the placeholders with your values.
 
 ```bash
 cp .env.example .env
@@ -28,117 +43,122 @@ Required variables:
 - `LLM_BASE_URL`: reachable OpenAI-compatible base URL
 - `LLM_MODEL`: model name to call
 - `LLM_API_KEY`: optional API key; leave empty if your provider allows it
-- `LLM_SUPPORTS_IMAGE_INPUT`: `true` or `false`
-- `DATABASE_PATH`: SQLite database path for threads, approvals, and events
+- `DATABASE_URL`: PostgreSQL connection string
+- `LIGHTRAG_API_URL`: LightRAG server URL (optional, enables knowledge base)
+- `LIGHTRAG_ENABLED`: set to `false` to disable knowledge base
 
-Export the variables from `.env` into your shell before running commands.
+Optional:
+
+- `HEALTH_DEFAULT_CALORIE_GOAL`: default daily intake goal (default: 2000)
+- `HEALTH_DEFAULT_BURN_GOAL`: default daily burn goal (default: 500)
+- `LLM_CONTEXT_WINDOW`: per-user conversation-history token budget (default: `256000`)
+- `LLM_SUPPORTS_IMAGE_INPUT`: set to `true` when the configured model accepts image inputs
+- `LLM_VISION_MODEL`: optional vision-capable model override
+- `ILINK_BOT_TOKEN`: iLink WeChat Bot token for real WeChat integration
+
+The history budget uses a conservative character-based token estimate, so a
+smaller custom value retains fewer, more recent messages. Both user messages
+and assistant replies are persisted per user.
+
+The health agent requires the LLM to call at least one registered health tool
+before it can send a final response. For deterministic totals from saved
+records, it uses `health.calculate_intake` and `health.calculate_expenditure`.
+The latter includes both recorded exercise and BMR when the profile has gender,
+age, height, and weight. Food images are accepted through iLink and sent to a
+vision-capable model, which records an estimated food entry through the normal
+diet tool.
+
+## Setup
+
+### PostgreSQL
+
+```bash
+docker run -d --name wechat-claw-pg \
+  -e POSTGRES_DB=wechat_claw \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  pgvector/pgvector:pg18
+```
+
+Migrations run automatically on startup.
+
+### LightRAG (optional but recommended)
+
+```bash
+# Start LightRAG server (requires Ollama or OpenAI)
+bash scripts/start-lightrag.sh
+
+# Import knowledge base data
+npx tsx scripts/init-knowledge-base.ts
+```
+
+### Test database
+
+```bash
+docker run -d --name wechat-claw-pg-test \
+  -e POSTGRES_DB=wechat_claw_test \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  pgvector/pgvector:pg18
+```
 
 ## Commands
 
 ```bash
-npm test
-npx tsc --noEmit
-npm run build
-npm run start:mvp
-npm run start:wechat
+pnpm test          # run all tests (requires test PG)
+npx tsc --noEmit   # type check
+pnpm run build     # build
+pnpm run start:wechat  # start runtime
 ```
 
-## Smoke verification
+## Usage examples
 
-`npm run start:mvp` is the dedicated smoke verifier.
+Send these messages via WeChat:
 
-It builds the project, bootstraps the composed app, sends one scripted trusted-admin message through the gateway path, waits for a newly created pending approval, auto-resumes that approval, and prints the final thread status.
-
-Use this command to prove the configured provider path, approval flow, and persistence wiring still work end to end.
-
-## Real runtime
-
-`npm run start:wechat` is the real runtime entrypoint.
-
-It builds the project, bootstraps the app, starts the runtime, and launches the TUI without routing through the smoke verifier. This is the command to use for normal operation.
-
-## Restart and recovery expectations
-
-Threads, approvals, and events are persisted in SQLite at `DATABASE_PATH`.
-
-If the process stops while an approval is pending:
-
-- the approval remains stored
-- the waiting thread remains stored
-- `npm run start:wechat` reloads that state on the next start
-- the TUI shows the recovered pending approval again so the operator can approve or reject it
-
-`npm run start:mvp` remains a one-shot verifier. `npm run start:wechat` is the long-running operator path.
-
-## Troubleshooting
-
-### Missing config
-
-Startup failures caused by missing required env values are reported as:
-
-```text
-Startup failed [config]: Missing required config: ...
-```
-
-Check that every variable from `.env.example` is exported before starting the runtime.
-
-### Unreachable provider
-
-If the OpenAI-compatible endpoint cannot be reached, startup fails with a provider-category message.
-
-Check:
-
-- `LLM_BASE_URL` is correct
-- the provider is running
-- the model name is valid
-- local networking/firewall settings allow access
-
-### Gateway issues
-
-If the runtime cannot initialize the gateway path, startup should fail with a gateway-category message.
-
-Re-check the runtime-specific gateway configuration and any local session prerequisites before retrying.
-
-### Database path problems
-
-If SQLite cannot open or write the configured database, startup should fail with a database-category message.
-
-Check:
-
-- the parent directory exists
-- the path is writable
-- the file is not locked by another process
+| Message | Intent | Action |
+|---------|--------|--------|
+| 今天早餐吃了两个包子 | record_diet | Query KB for calories, persist diet record |
+| 下午跑了5公里 | record_exercise | Query KB for burn, persist exercise record |
+| 看看今天的报告 | query_report | Generate daily report with insights |
+| 给我这周的报告 | query_report | Generate weekly aggregated report |
+| 我昨天吃了什么 | query_history | Return all records for the date |
+| 今天摄入多少 | calculate_intake | Sum persisted diet-record calories deterministically |
+| 今天消耗多少 | calculate_expenditure | Sum persisted exercise-record calories deterministically |
+| 设置每天摄入1800千卡 | set_goal | Persist calorie intake goal |
+| 给我一些减脂建议 | get_advice | Query KB for personalized advice |
 
 ## Project structure
 
 ```text
 src/
-  agent/      LLM provider abstraction, planning, runtime
-  app/        application composition and bootstrap code
-  approval/   approval policies and engine
-  shared/     config and schemas
-  store/      SQLite access, migrations, repositories
-  tasks/      thread routing, task service, state transitions
-  tools/      tool registry and tool runners
-  tui/        local terminal UI models and widgets
-  wechat/     WeChat gateway and session abstractions
+  agent/        LLM provider, health pipeline, prompts, reply formatter
+  app/          application composition, entrypoint, bootstrap
+  approval/     approval policies and engine
+  health/       LightRAG client, knowledge service, report generator, types
+  shared/       config and schemas
+  store/        PostgreSQL access, migrations, repositories (threads, diet, exercise, goals, reports)
+  tasks/        thread routing, task service
+  tools/        tool registry and runners
+  tui/          terminal UI
+  wechat/       WeChat gateway and iLink client
 
-docs/
-  plans/      active and archived design/implementation docs
-
-tests/
-  ...         unit and composition coverage across the runtime
+scripts/        LightRAG startup and knowledge base import scripts
+docs/plans/     design and implementation docs
+tests/          unit and integration tests
 ```
+
+## Restart and recovery
+
+All records are persisted to PostgreSQL. On restart:
+
+- Diet records, exercise records, goals, and report snapshots are preserved
+- Conversation history is restored per user, up to `LLM_CONTEXT_WINDOW`
+- Pending approvals (legacy path) are recovered and shown in the TUI
+- The health pipeline rebuilds health context from today's records on each message
 
 ## Related docs
 
-- `docs/plans/README.md`
-- `docs/plans/2026-04-09-deliverable-internal-mvp-design.md`
-- `docs/plans/2026-04-09-deliverable-internal-mvp.md`
-
-## Project conventions
-
-- `AGENTS.md` is the source of project conventions for this repository.
-- Active docs live in `docs/`; completed or outdated docs move to `docs/archive/`.
-- Task-node progress updates go in `progress.txt`.
-- Debugging and iteration retrospectives go in `lesson.md`.
+- `docs/plans/2026-08-08-health-calorie-tracker-prd.md` — full PRD
+- `docs/plans/README.md` — active plan list

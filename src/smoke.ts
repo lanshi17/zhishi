@@ -69,7 +69,8 @@ export async function runMvpSmoke(deps: Partial<SmokeDeps> = {}) {
     return 1;
   }
 
-  const existingApprovalIds = new Set(runtime.taskService.listApprovals().map((approval) => approval.id));
+  const initialApprovals = await runtime.taskService.listApprovals();
+  const existingApprovalIds = new Set(initialApprovals.map((approval) => approval.id));
   const fromUserId = env.ADMIN_USER_ID ?? "wxid_admin";
 
   writeLine(stdout, `Submitted smoke message: ${SMOKE_MESSAGE}`);
@@ -80,7 +81,8 @@ export async function runMvpSmoke(deps: Partial<SmokeDeps> = {}) {
     contextToken: "mvp-smoke",
   });
 
-  const approval = getNewPendingApproval(runtime.taskService.listApprovals(), existingApprovalIds);
+  const allApprovals = await runtime.taskService.listApprovals();
+  const approval = getNewPendingApproval(allApprovals, existingApprovalIds);
   if (!approval) {
     writeLine(stderr, "No new pending approval was created by the smoke message.");
     return 1;
@@ -90,7 +92,7 @@ export async function runMvpSmoke(deps: Partial<SmokeDeps> = {}) {
 
   await runtime.app.resumeApproval(approval.id);
 
-  const thread: SmokeThread = runtime.taskService.getThread(approval.threadId);
+  const thread: SmokeThread = await runtime.taskService.getThread(approval.threadId);
   if (!thread?.status) {
     writeLine(stderr, `Could not resolve final thread status for approval ${approval.id}.`);
     return 1;

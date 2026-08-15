@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { DbPool } from "../db.js";
 import type { ApprovalStatus } from "../../tasks/state-machine.js";
 
 export type ApprovalAction = {
@@ -21,9 +21,9 @@ export type ApprovalRecord = {
 };
 
 export class ApprovalRepository {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly pool: DbPool) {}
 
-  create(input: ApprovalInput): ApprovalRecord {
+  async create(input: ApprovalInput): Promise<ApprovalRecord> {
     const approval: ApprovalRecord = {
       id: crypto.randomUUID(),
       threadId: input.threadId,
@@ -32,27 +32,27 @@ export class ApprovalRepository {
       reply: input.reply,
     };
 
-    this.db
-      .prepare(
-        "INSERT INTO approval_requests (id, thread_id, status, action, reply) VALUES (?, ?, ?, ?, ?)"
-      )
-      .run(
+    await this.pool.query(
+      "INSERT INTO approval_requests (id, thread_id, status, action, reply) VALUES ($1, $2, $3, $4, $5)",
+      [
         approval.id,
         approval.threadId,
         approval.status,
         JSON.stringify(approval.action),
-        approval.reply
-      );
+        approval.reply,
+      ],
+    );
 
     return approval;
   }
 
-  get(approvalId: string): ApprovalRecord | undefined {
-    const row = this.db
-      .prepare(
-        "SELECT id, thread_id, status, action, reply FROM approval_requests WHERE id = ?"
-      )
-      .get(approvalId) as
+  async get(approvalId: string): Promise<ApprovalRecord | undefined> {
+    const result = await this.pool.query(
+      "SELECT id, thread_id, status, action, reply FROM approval_requests WHERE id = $1",
+      [approvalId],
+    );
+
+    const row = result.rows[0] as
       | { id: string; thread_id: string; status: string; action: string; reply: string }
       | undefined;
 
@@ -69,12 +69,12 @@ export class ApprovalRepository {
     };
   }
 
-  listAll(): ApprovalRecord[] {
-    const rows = this.db
-      .prepare("SELECT id, thread_id, status, action, reply FROM approval_requests ORDER BY rowid ASC")
-      .all() as Array<{ id: string; thread_id: string; status: string; action: string; reply: string }>;
+  async listAll(): Promise<ApprovalRecord[]> {
+    const result = await this.pool.query(
+      "SELECT id, thread_id, status, action, reply FROM approval_requests ORDER BY seq ASC",
+    );
 
-    return rows.map((row) => ({
+    return result.rows.map((row: { id: string; thread_id: string; status: string; action: string; reply: string }) => ({
       id: row.id,
       threadId: row.thread_id,
       status: row.status as ApprovalStatus,
@@ -83,15 +83,17 @@ export class ApprovalRepository {
     }));
   }
 
-  markApproved(approvalId: string): void {
-    this.db
-      .prepare("UPDATE approval_requests SET status = ? WHERE id = ?")
-      .run("approved", approvalId);
+  async markApproved(approvalId: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE approval_requests SET status = $1 WHERE id = $2",
+      ["approved", approvalId],
+    );
   }
 
-  markRejected(approvalId: string): void {
-    this.db
-      .prepare("UPDATE approval_requests SET status = ? WHERE id = ?")
-      .run("rejected", approvalId);
+  async markRejected(approvalId: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE approval_requests SET status = $1 WHERE id = $2",
+      ["rejected", approvalId],
+    );
   }
 }

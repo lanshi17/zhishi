@@ -5,3 +5,15 @@ dist/
 .worktrees/
 .claude/
 .env
+# In-place tsc emit (always use tsconfig.build.json → dist/)
+src/**/*.js
+src/**/*.d.ts
+tests/**/*.js
+tests/**/*.d.ts
+
+# Runtime/generated data (never commit)
+logs/
+data/
+rag_storage/
+lightrag.log
+.venv-lightrag/

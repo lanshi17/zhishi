@@ -24,7 +24,7 @@ export function createTaskService({
   const approvals: Map<string, ApprovalRecord> = new Map();
 
   return {
-    receiveMessage(input: MessageInput) {
+    async receiveMessage(input: MessageInput): Promise<{ threadId: string }> {
       const existing = routeThread(threads, input.fromUserId);
 
       if (existing) {
@@ -32,8 +32,9 @@ export function createTaskService({
       }
 
       if (threadRepository) {
+        const dbThreads = await threadRepository.listBySourceUserId(input.fromUserId);
         const persisted = routeThread(
-          threadRepository.listBySourceUserId(input.fromUserId).map((thread) => ({
+          dbThreads.map((thread) => ({
             id: thread.id,
             fromUserId: thread.sourceUserId,
             status: thread.status,
@@ -49,7 +50,7 @@ export function createTaskService({
       let threadId: string;
 
       if (threadRepository) {
-        const created = threadRepository.create({
+        const created = await threadRepository.create({
           sourceUserId: input.fromUserId,
           title: input.text,
         });
@@ -68,7 +69,8 @@ export function createTaskService({
       threads.push(thread);
       return { threadId };
     },
-    getThread(threadId: string) {
+
+    async getThread(threadId: string): Promise<TaskThread | undefined> {
       const local = threads.find((thread) => thread.id === threadId);
       if (local) {
         return local;
@@ -78,7 +80,7 @@ export function createTaskService({
         return undefined;
       }
 
-      const persisted = threadRepository.get(threadId);
+      const persisted = await threadRepository.get(threadId);
       if (!persisted) {
         return undefined;
       }
@@ -90,9 +92,11 @@ export function createTaskService({
         status: persisted.status,
       };
     },
-    listThreads() {
+
+    async listThreads(): Promise<TaskThread[]> {
       if (threadRepository) {
-        return threadRepository.listAll().map((thread) => ({
+        const all = await threadRepository.listAll();
+        return all.map((thread) => ({
           id: thread.id,
           fromUserId: thread.sourceUserId,
           title: thread.title,
@@ -102,19 +106,22 @@ export function createTaskService({
 
       return [...threads];
     },
-    appendEvent(threadId: string, event: TaskEvent) {
+
+    async appendEvent(threadId: string, event: TaskEvent): Promise<void> {
       if (!events.has(threadId)) {
         events.set(threadId, []);
       }
       events.get(threadId)!.push(event);
 
       if (threadRepository) {
-        threadRepository.appendEvent(threadId, event);
+        await threadRepository.appendEvent(threadId, event);
       }
     },
-    listEvents(threadId: string) {
+
+    async listEvents(threadId: string): Promise<TaskEvent[]> {
       if (threadRepository) {
-        return threadRepository.listEvents(threadId).map((event) => ({
+        const dbEvents = await threadRepository.listEvents(threadId);
+        return dbEvents.map((event) => ({
           kind: event.kind,
           summary: event.summary,
         }));
@@ -122,33 +129,40 @@ export function createTaskService({
 
       return events.get(threadId) ?? [];
     },
-    markDone(threadId: string) {
+
+    async markDone(threadId: string): Promise<void> {
       const thread = threads.find((t) => t.id === threadId);
       if (thread) {
         thread.status = "done";
       }
 
       if (threadRepository) {
-        threadRepository.updateStatus(threadId, "done");
+        await threadRepository.updateStatus(threadId, "done");
       }
     },
-    markFailed(threadId: string, reason: string) {
+
+    async markFailed(threadId: string, reason: string): Promise<void> {
       const thread = threads.find((t) => t.id === threadId);
       if (thread) {
         thread.status = "failed";
       }
 
-      this.appendEvent(threadId, { kind: "thread.failed", summary: reason });
+      await this.appendEvent(threadId, { kind: "thread.failed", summary: reason });
 
       if (threadRepository) {
-        threadRepository.updateStatus(threadId, "failed");
+        await threadRepository.updateStatus(threadId, "failed");
       }
     },
-    createApprovalRequest(threadId: string, action: { tool: string; input: unknown }, reply: string) {
+
+    async createApprovalRequest(
+      threadId: string,
+      action: { tool: string; input: unknown },
+      reply: string,
+    ): Promise<{ approvalId: string }> {
       let approvalId: string;
 
       if (approvalRepository) {
-        const created = approvalRepository.create({
+        const created = await approvalRepository.create({
           threadId,
           action,
           reply,
@@ -168,26 +182,31 @@ export function createTaskService({
 
       return { approvalId };
     },
-    markWaitingApproval(threadId: string, approval?: { tool: string; summary: string }) {
+
+    async markWaitingApproval(
+      threadId: string,
+      approval?: { tool: string; summary: string },
+    ): Promise<void> {
       const thread = threads.find((t) => t.id === threadId);
       if (thread) {
         thread.status = "waiting_approval";
       }
 
       if (approval) {
-        this.appendEvent(threadId, {
+        await this.appendEvent(threadId, {
           kind: "approval.requested",
           summary: approval.summary,
         });
       }
 
       if (threadRepository) {
-        threadRepository.updateStatus(threadId, "waiting_approval");
+        await threadRepository.updateStatus(threadId, "waiting_approval");
       }
     },
-    getPendingApproval(approvalId: string) {
+
+    async getPendingApproval(approvalId: string): Promise<ApprovalRecord | undefined> {
       if (approvalRepository) {
-        const approval = approvalRepository.get(approvalId);
+        const approval = await approvalRepository.get(approvalId);
         if (approval) {
           approvals.set(approvalId, approval);
         }
@@ -196,9 +215,11 @@ export function createTaskService({
 
       return approvals.get(approvalId);
     },
-    listApprovals() {
+
+    async listApprovals(): Promise<ApprovalRecord[]> {
       if (approvalRepository) {
-        return approvalRepository.listAll().map((approval) => ({
+        const all = await approvalRepository.listAll();
+        return all.map((approval) => ({
           id: approval.id,
           threadId: approval.threadId,
           action: approval.action,
@@ -215,24 +236,26 @@ export function createTaskService({
         status: approval.status,
       }));
     },
-    markApproved(approvalId: string) {
+
+    async markApproved(approvalId: string): Promise<void> {
       const approval = approvals.get(approvalId);
       if (approval) {
         approval.status = "approved";
       }
 
       if (approvalRepository) {
-        approvalRepository.markApproved(approvalId);
+        await approvalRepository.markApproved(approvalId);
       }
     },
-    markRejected(approvalId: string) {
+
+    async markRejected(approvalId: string): Promise<void> {
       const approval = approvals.get(approvalId);
       if (approval) {
         approval.status = "rejected";
       }
 
       if (approvalRepository) {
-        approvalRepository.markRejected(approvalId);
+        await approvalRepository.markRejected(approvalId);
       }
     },
   };

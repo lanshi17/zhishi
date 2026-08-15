@@ -4,11 +4,6 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.17.1",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3"
-    ]
-  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -17,13 +12,13 @@
     "start:wechat": "npm run build && node dist/main-entrypoint.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
+    "pg": "^8.13.0",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/pg": "^8.11.10",
     "@types/qrcode-terminal": "^0.12.2",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

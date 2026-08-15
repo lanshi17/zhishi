@@ -6,21 +6,46 @@ describe("describeConfigError", () => {
     expect(describeConfigError({
       issues: [
         { path: ["ADMIN_USER_ID"] },
-        { path: ["DATABASE_PATH"] },
+        { path: ["DATABASE_URL"] },
       ],
-    } as never)).toContain("Missing required config: ADMIN_USER_ID, DATABASE_PATH");
+    } as never)).toContain("Missing required config: ADMIN_USER_ID, DATABASE_URL");
   });
 });
 
 describe("loadConfig", () => {
   describe("OpenAI-compatible environment contract", () => {
+    it("defaults the LLM context window to 256k tokens", () => {
+      const cfg = loadConfig({
+        ADMIN_USER_ID: "wxid_admin",
+        WORKSPACE_ROOT: "/workspace",
+        LLM_BASE_URL: "https://api.openai.com/v1",
+        LLM_MODEL: "gpt-4o-mini",
+        DATABASE_URL: "postgres://localhost:5432/test",
+      });
+
+      expect(cfg.health.contextWindow).toBe(256000);
+    });
+
+    it("accepts a custom LLM context window token budget", () => {
+      const cfg = loadConfig({
+        ADMIN_USER_ID: "wxid_admin",
+        WORKSPACE_ROOT: "/workspace",
+        LLM_BASE_URL: "https://api.openai.com/v1",
+        LLM_MODEL: "gpt-4o-mini",
+        DATABASE_URL: "postgres://localhost:5432/test",
+        LLM_CONTEXT_WINDOW: "4096",
+      });
+
+      expect(cfg.health.contextWindow).toBe(4096);
+    });
+
     it("requires LLM_BASE_URL", () => {
       expect(() =>
         loadConfig({
           ADMIN_USER_ID: "wxid_admin",
           WORKSPACE_ROOT: "/workspace",
           LLM_MODEL: "gpt-4o-mini",
-          DATABASE_PATH: "./data/app.db",
+          DATABASE_URL: "postgres://localhost:5432/test",
         })
       ).toThrow();
     });
@@ -31,7 +56,18 @@ describe("loadConfig", () => {
           ADMIN_USER_ID: "wxid_admin",
           WORKSPACE_ROOT: "/workspace",
           LLM_BASE_URL: "https://api.openai.com/v1",
-          DATABASE_PATH: "./data/app.db",
+          DATABASE_URL: "postgres://localhost:5432/test",
+        })
+      ).toThrow();
+    });
+
+    it("requires DATABASE_URL", () => {
+      expect(() =>
+        loadConfig({
+          ADMIN_USER_ID: "wxid_admin",
+          WORKSPACE_ROOT: "/workspace",
+          LLM_BASE_URL: "https://api.openai.com/v1",
+          LLM_MODEL: "gpt-4o-mini",
         })
       ).toThrow();
     });
@@ -42,7 +78,7 @@ describe("loadConfig", () => {
         WORKSPACE_ROOT: "/workspace",
         LLM_BASE_URL: "https://api.openai.com/v1",
         LLM_MODEL: "gpt-4o-mini",
-        DATABASE_PATH: "./data/app.db",
+        DATABASE_URL: "postgres://localhost:5432/test",
       });
 
       expect(cfg.llm.apiKey).toBeUndefined();
@@ -55,7 +91,7 @@ describe("loadConfig", () => {
         LLM_BASE_URL: "https://api.openai.com/v1",
         LLM_MODEL: "gpt-4o-mini",
         LLM_API_KEY: "sk-test-123",
-        DATABASE_PATH: "./data/app.db",
+        DATABASE_URL: "postgres://localhost:5432/test",
       });
 
       expect(cfg.llm.apiKey).toBe("sk-test-123");
@@ -67,7 +103,7 @@ describe("loadConfig", () => {
         WORKSPACE_ROOT: "/workspace",
         LLM_BASE_URL: "https://api.openai.com/v1",
         LLM_MODEL: "gpt-4o-mini",
-        DATABASE_PATH: "./data/app.db",
+        DATABASE_URL: "postgres://localhost:5432/test",
       });
 
       expect(cfg.llm.baseUrl).toBe("https://api.openai.com/v1");
@@ -80,7 +116,7 @@ describe("loadConfig", () => {
         WORKSPACE_ROOT: "/workspace",
         LLM_BASE_URL: "https://api.openai.com/v1",
         LLM_MODEL: "gpt-4o-mini",
-        DATABASE_PATH: "./data/app.db",
+        DATABASE_URL: "postgres://localhost:5432/test",
       });
 
       expect(cfg.llm.supportsImageInput).toBe(false);
@@ -93,7 +129,7 @@ describe("loadConfig", () => {
         LLM_BASE_URL: "https://api.openai.com/v1",
         LLM_MODEL: "gpt-4o-mini",
         LLM_SUPPORTS_IMAGE_INPUT: "true",
-        DATABASE_PATH: "./data/app.db",
+        DATABASE_URL: "postgres://localhost:5432/test",
       });
 
       expect(cfg.llm.supportsImageInput).toBe(true);
@@ -106,24 +142,24 @@ describe("loadConfig", () => {
         LLM_BASE_URL: "https://api.openai.com/v1",
         LLM_MODEL: "gpt-4o-mini",
         LLM_SUPPORTS_IMAGE_INPUT: "false",
-        DATABASE_PATH: "./data/app.db",
+        DATABASE_URL: "postgres://localhost:5432/test",
       });
 
       expect(cfg.llm.supportsImageInput).toBe(false);
     });
 
-    it("preserves other config fields (adminUserId, workspaceRoot, databasePath)", () => {
+    it("preserves other config fields (adminUserId, workspaceRoot, databaseUrl)", () => {
       const cfg = loadConfig({
         ADMIN_USER_ID: "wxid_admin",
         WORKSPACE_ROOT: "/workspace",
         LLM_BASE_URL: "https://api.openai.com/v1",
         LLM_MODEL: "gpt-4o-mini",
-        DATABASE_PATH: "./data/app.db",
+        DATABASE_URL: "postgres://localhost:5432/test",
       });
 
       expect(cfg.adminUserId).toBe("wxid_admin");
       expect(cfg.workspaceRoot).toBe("/workspace");
-      expect(cfg.databasePath).toBe("./data/app.db");
+      expect(cfg.databaseUrl).toBe("postgres://localhost:5432/test");
     });
   });
 });

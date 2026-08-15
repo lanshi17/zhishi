@@ -9,3 +9,23 @@ Next: real WeChat transport, provider contract enforcement, richer TUI operator 
 [2026-05-12] Task: iLink WeChat integration (ralph/ilink-wechat-integration)
 Status: implemented iLink HTTP client, real WeChat gateway with long-polling, QR login CLI, iLink-based sendReply with pino fallback; 128 tests pass, typecheck clean, build succeeds
 Next: obtain bot_token via QR login, then test real WeChat message flow
+
+[2026-08-14] Task: inspect missing LLM conversation context
+Status: root cause identified: the health pipeline sends only the current user message to the provider; completed threads are not reused, and task events persist only truncated replies rather than a user/assistant message history. Existing focused health-pipeline tests pass but do not cover multi-turn context propagation.
+Next: confirm the required retention window and implement persisted per-user conversation messages with a multi-turn regression test.
+
+[2026-08-14] Task: persist configurable LLM conversation context
+Status: added PostgreSQL-backed per-user `conversation_messages`; the health pipeline now restores retained history before each request and persists each user/assistant turn. `LLM_CONTEXT_WINDOW` is a positive token-budget setting with a default of 256000. Added history propagation, ordering/trimming, and configuration regression tests; 239 tests, typecheck, and build pass.
+Next: configure `LLM_CONTEXT_WINDOW` in deployment only when a smaller provider context limit is required.
+
+[2026-08-14] Task: verify context retention for direct LLM replies
+Status: confirmed the direct final-response path does not depend on tool calls: it persists the incoming user message and the returned assistant text, and reuses prior messages on the next request. The focused regression test passes.
+Next: no additional action required for direct-reply context retention.
+
+[2026-08-14] Task: require health-agent tool calls and deterministic calorie totals
+Status: health-agent loop now rejects final LLM text when no registered tool was called. Added `health.calculate_intake` and `health.calculate_expenditure`, which deterministically sum persisted daily diet and exercise records. Added regression tests for enforcement and both calculations; focused tests, typecheck, and build pass.
+Next: ensure the deployed model supports OpenAI-compatible function calling.
+
+[2026-08-14] Task: complete reports, BMR expenditure, and food-image estimation
+Status: verified daily/weekly/monthly/quarterly/yearly report ranges; total expenditure now combines recorded exercise with BMR when a complete profile exists, with both components exposed in reports and deterministic expenditure results. Food images are passed to vision models and must be recorded through `health.record_diet`; 245 tests, typecheck, and build pass.
+Next: configure `LLM_SUPPORTS_IMAGE_INPUT=true` and, if needed, `LLM_VISION_MODEL` for the deployed vision-capable model.

@@ -1,14 +1,22 @@
-import Database from "better-sqlite3";
+import { Pool } from "pg";
 import { applyMigrations } from "./migrations.js";
 
-export function createInMemoryDatabase() {
-  const db = new Database(":memory:");
-  applyMigrations(db);
-  return db;
+export type DbPool = Pool;
+
+export async function createPgPool(config: {
+  databaseUrl: string;
+  max?: number;
+  idleTimeoutMs?: number;
+}): Promise<DbPool> {
+  const pool = new Pool({
+    connectionString: config.databaseUrl,
+    max: config.max ?? 10,
+    idleTimeoutMillis: config.idleTimeoutMs ?? 30000,
+  });
+  await applyMigrations(pool);
+  return pool;
 }
 
-export function createSqliteDatabase(databasePath: string) {
-  const db = new Database(databasePath);
-  applyMigrations(db);
-  return db;
+export async function createTestPgPool(databaseUrl: string): Promise<DbPool> {
+  return createPgPool({ databaseUrl, max: 5 });
 }

@@ -1,5 +1,5 @@
 import type { InboundWeChatMessage } from "./types.js";
-import type { createIlinkClient } from "./ilink-client.js";
+import type { createIlinkClient, IlinkInboundMessage } from "./ilink-client.js";
 
 type IlinkClient = ReturnType<typeof createIlinkClient>;
 
@@ -12,6 +12,26 @@ export function createIlinkWeChatGateway(deps: {
   let polling = false;
   let getUpdatesBuf = "";
 
+  async function extractImages(msg: IlinkInboundMessage): Promise<string[]> {
+    const imageUrls: string[] = [];
+    for (const item of msg.item_list ?? []) {
+      if (item.type === 2 && item.image_item) {
+        try {
+          const media = item.image_item.media ?? item.image_item.thumb_media;
+          const aesKey = item.image_item.aeskey ?? media?.aes_key;
+          if (media && aesKey) {
+            const decrypted = await deps.ilinkClient.downloadImage(media, aesKey);
+            const base64 = decrypted.toString("base64");
+            imageUrls.push(`data:image/jpeg;base64,${base64}`);
+          }
+        } catch (err) {
+          console.error("[ilink] image download/decrypt failed:", err);
+        }
+      }
+    }
+    return imageUrls;
+  }
+
   async function poll() {
     while (polling) {
       try {
@@ -21,16 +41,24 @@ export function createIlinkWeChatGateway(deps: {
         for (const msg of result.msgs ?? []) {
           if (msg.message_type !== 1) continue;
 
-          const textItem = msg.item_list?.[0];
-          const text = textItem?.text_item?.text ?? "";
-          if (!text) continue;
+          // Extract text and images from item_list
+          let text = "";
+          for (const item of msg.item_list ?? []) {
+            if (item.text_item?.text) {
+              text += item.text_item.text;
+            }
+          }
+          const imageUrls = await extractImages(msg);
+          if (!text && imageUrls.length === 0) continue;
 
           contextTokens.set(msg.from_user_id, msg.context_token);
 
           const inbound: InboundWeChatMessage = {
             fromUserId: msg.from_user_id,
-            text,
+            text: text || "[图片]",
             contextToken: msg.context_token,
+            clientId: msg.client_id,
+            imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
           };
 
           if (inbound.fromUserId === deps.adminUserId) {

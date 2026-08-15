@@ -31,13 +31,14 @@ function usage(stream: CliStream) {
   writeLine(stream, "  login");
 }
 
-function getThreadStatus(runtime: CliRuntime, approvalId: string) {
-  const approval = runtime.taskService.getPendingApproval?.(approvalId);
+async function getThreadStatus(runtime: CliRuntime, approvalId: string): Promise<string | undefined> {
+  const approval = await runtime.taskService.getPendingApproval?.(approvalId);
   if (!approval) {
     return undefined;
   }
 
-  return runtime.taskService.getThread?.(approval.threadId)?.status;
+  const thread = await runtime.taskService.getThread?.(approval.threadId);
+  return thread?.status;
 }
 
 export async function runCli(argv: string[], deps: Partial<CliDeps> = {}) {
@@ -146,7 +147,7 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}) {
 
   if (command === "approve") {
     await runtime.app.resumeApproval(approvalId);
-    const status = getThreadStatus(runtime, approvalId);
+    const status = await getThreadStatus(runtime, approvalId);
     writeLine(stdout, `Approval ${approvalId} approved.`);
     if (status) {
       writeLine(stdout, `Final thread status: ${status}`);
@@ -156,7 +157,7 @@ export async function runCli(argv: string[], deps: Partial<CliDeps> = {}) {
 
   const reason = rest.slice(1).join(" ") || undefined;
   await runtime.app.rejectApproval(approvalId, reason);
-  const status = getThreadStatus(runtime, approvalId);
+  const status = await getThreadStatus(runtime, approvalId);
   writeLine(stdout, `Approval ${approvalId} rejected.${reason ? ` Reason: ${reason}` : ""}`);
   if (status) {
     writeLine(stdout, `Final thread status: ${status}`);

@@ -36,7 +36,7 @@ function classifyStartupFailure(error: unknown): StartupFailureCategory {
     return "provider";
   }
 
-  if (message.includes("database") || message.includes("sqlite") || message.includes("SQLITE")) {
+  if (message.includes("database") || message.includes("postgres") || message.includes("PG") || message.includes("ECONNREFUSED")) {
     return "database";
   }
 
@@ -74,7 +74,7 @@ export async function bootstrapApplication(input: {
   try {
     const config = createBootstrapConfig({ workspaceRoot: input.env.WORKSPACE_ROOT ?? "/" });
     const createEntrypoint = input.createDefaultEntrypoint ?? createDefaultEntrypoint;
-    const entrypoint = createEntrypoint({ env: input.env });
+    const entrypoint = await createEntrypoint({ env: input.env });
 
     return {
       app: entrypoint.app,
@@ -82,6 +82,7 @@ export async function bootstrapApplication(input: {
       config,
       taskService: entrypoint.taskService,
       setCurrentMessage: entrypoint.setCurrentMessage,
+      db: entrypoint.db,
       async start() {
         const gw = entrypoint.gateway as { start?: () => void };
         gw.start?.();

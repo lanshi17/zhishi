@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { DbPool } from "../db.js";
 import type { EventInput } from "./events.js";
 import type { TaskStatus } from "../../tasks/state-machine.js";
 
@@ -22,9 +22,9 @@ export type ThreadEventRecord = {
 };
 
 export class ThreadRepository {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly pool: DbPool) {}
 
-  create(input: ThreadInput): ThreadRecord {
+  async create(input: ThreadInput): Promise<ThreadRecord> {
     const thread: ThreadRecord = {
       id: crypto.randomUUID(),
       sourceUserId: input.sourceUserId,
@@ -32,14 +32,15 @@ export class ThreadRepository {
       status: "queued",
     };
 
-    this.db
-      .prepare("INSERT INTO threads (id, source_user_id, title, status) VALUES (?, ?, ?, ?)")
-      .run(thread.id, thread.sourceUserId, thread.title, thread.status);
+    await this.pool.query(
+      "INSERT INTO threads (id, source_user_id, title, status) VALUES ($1, $2, $3, $4)",
+      [thread.id, thread.sourceUserId, thread.title, thread.status],
+    );
 
     return thread;
   }
 
-  appendEvent(threadId: string, event: EventInput): ThreadEventRecord {
+  async appendEvent(threadId: string, event: EventInput): Promise<ThreadEventRecord> {
     const record: ThreadEventRecord = {
       id: crypto.randomUUID(),
       threadId,
@@ -47,17 +48,23 @@ export class ThreadRepository {
       summary: event.summary,
     };
 
-    this.db
-      .prepare("INSERT INTO task_events (id, thread_id, kind, summary) VALUES (?, ?, ?, ?)")
-      .run(record.id, record.threadId, record.kind, record.summary);
+    await this.pool.query(
+      "INSERT INTO task_events (id, thread_id, kind, summary) VALUES ($1, $2, $3, $4)",
+      [record.id, record.threadId, record.kind, record.summary],
+    );
 
     return record;
   }
 
-  get(threadId: string): ThreadRecord | undefined {
-    const row = this.db
-      .prepare("SELECT id, source_user_id, title, status FROM threads WHERE id = ?")
-      .get(threadId) as { id: string; source_user_id: string; title: string; status: TaskStatus } | undefined;
+  async get(threadId: string): Promise<ThreadRecord | undefined> {
+    const result = await this.pool.query(
+      "SELECT id, source_user_id, title, status FROM threads WHERE id = $1",
+      [threadId],
+    );
+
+    const row = result.rows[0] as
+      | { id: string; source_user_id: string; title: string; status: TaskStatus }
+      | undefined;
 
     if (!row) {
       return undefined;
@@ -71,12 +78,12 @@ export class ThreadRepository {
     };
   }
 
-  listAll(): ThreadRecord[] {
-    const rows = this.db
-      .prepare("SELECT id, source_user_id, title, status FROM threads ORDER BY rowid ASC")
-      .all() as Array<{ id: string; source_user_id: string; title: string; status: TaskStatus }>;
+  async listAll(): Promise<ThreadRecord[]> {
+    const result = await this.pool.query(
+      "SELECT id, source_user_id, title, status FROM threads ORDER BY seq ASC",
+    );
 
-    return rows.map((row) => ({
+    return result.rows.map((row: { id: string; source_user_id: string; title: string; status: TaskStatus }) => ({
       id: row.id,
       sourceUserId: row.source_user_id,
       title: row.title,
@@ -84,12 +91,13 @@ export class ThreadRepository {
     }));
   }
 
-  listBySourceUserId(sourceUserId: string): ThreadRecord[] {
-    const rows = this.db
-      .prepare("SELECT id, source_user_id, title, status FROM threads WHERE source_user_id = ? ORDER BY rowid ASC")
-      .all(sourceUserId) as Array<{ id: string; source_user_id: string; title: string; status: TaskStatus }>;
+  async listBySourceUserId(sourceUserId: string): Promise<ThreadRecord[]> {
+    const result = await this.pool.query(
+      "SELECT id, source_user_id, title, status FROM threads WHERE source_user_id = $1 ORDER BY seq ASC",
+      [sourceUserId],
+    );
 
-    return rows.map((row) => ({
+    return result.rows.map((row: { id: string; source_user_id: string; title: string; status: TaskStatus }) => ({
       id: row.id,
       sourceUserId: row.source_user_id,
       title: row.title,
@@ -97,12 +105,13 @@ export class ThreadRepository {
     }));
   }
 
-  listEvents(threadId: string): ThreadEventRecord[] {
-    const rows = this.db
-      .prepare("SELECT id, thread_id, kind, summary FROM task_events WHERE thread_id = ? ORDER BY rowid ASC")
-      .all(threadId) as Array<{ id: string; thread_id: string; kind: string; summary: string }>;
+  async listEvents(threadId: string): Promise<ThreadEventRecord[]> {
+    const result = await this.pool.query(
+      "SELECT id, thread_id, kind, summary FROM task_events WHERE thread_id = $1 ORDER BY seq ASC",
+      [threadId],
+    );
 
-    return rows.map((row) => ({
+    return result.rows.map((row: { id: string; thread_id: string; kind: string; summary: string }) => ({
       id: row.id,
       threadId: row.thread_id,
       kind: row.kind,
@@ -110,9 +119,10 @@ export class ThreadRepository {
     }));
   }
 
-  updateStatus(threadId: string, status: string): void {
-    this.db
-      .prepare("UPDATE threads SET status = ? WHERE id = ?")
-      .run(status, threadId);
+  async updateStatus(threadId: string, status: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE threads SET status = $1 WHERE id = $2",
+      [status, threadId],
+    );
   }
 }
