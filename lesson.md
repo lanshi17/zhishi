@@ -34,3 +34,17 @@
 - Attempts: Added failing report and deterministic-expenditure tests with a complete profile. A first verification exposed leaked `user_profiles` rows between integration tests; the shared database cleanup omitted that table.
 - Resolution: Reports now expose `exerciseBurn` and `basalBurn`, and calculate `totalBurn` as their sum. The deterministic expenditure tool follows the same calculation. The test cleanup now truncates `user_profiles`.
 - Prevention: Keep profile-aware report coverage and ensure shared test cleanup includes every persisted table that can affect calculations.
+
+## 2026-08-19 - PostgreSQL 未启动导致服务首次启动失败
+- Symptom: `pnpm run start:wechat` 首次退出，报 `Startup failed [database]: connect ECONNREFUSED 127.0.0.1:5432`。
+- Cause: `.env` 指向本机 PostgreSQL，但 `5432` 无监听进程，已有测试数据库容器也处于退出状态。
+- Attempts: 检查 Docker 容器与端口监听；启动 `wechat-claw-pg` PostgreSQL 容器并等待 `pg_isready` 返回 accepting connections；随后重启微信服务。
+- Resolution: 数据库就绪后服务成功完成构建、数据库启动初始化并进入 TUI 运行状态。
+- Prevention: 启动服务前确认 `DATABASE_URL` 对应数据库可连接；可将数据库容器纳入统一启动脚本。
+
+## 2026-08-19 - LightRAG 配置、代理依赖与向量模型不一致
+- Symptom: LightRAG `/health` 不可达；旧启动脚本默认连接本地 Ollama，未继承项目 `.env` 的远程 LLM；修正配置后查询仍返回 `no-context`。
+- Cause: 启动脚本没有传播 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL`；当前环境的 `ALL_PROXY` 使用 SOCKS5 但 `.venv-lightrag` 缺少 `socksio`；已有 1024 维向量由不同嵌入模型生成，维度相同但语义空间不一致。
+- Attempts: 复现 `/health` 连接失败；检查 LightRAG v1.5.6 配置与日志；验证 SiliconFlow 的 LLM/嵌入接口；安装 `socksio`；停服后备份并使用当前配置全量重建 47 个实体、78 个关系和 23 个文本块向量；重启后分别执行健康检查、naive 检索和 hybrid 检索。
+- Resolution: `scripts/start-lightrag.sh` 现在加载项目 `.env`，显式配置 OpenAI-compatible LLM/embedding、1024 维且不发送不兼容的 `dimensions` 参数，默认复用现有文件存储，并仅监听 `127.0.0.1`。混合查询已返回“鸡胸肉每100克 165 kcal”。
+- Prevention: 更换嵌入模型或提供商时必须重建所有 VDB；保持 `EMBEDDING_MODEL`、`EMBEDDING_DIM`、`EMBEDDING_SEND_DIM` 与 API 能力一致；重建前先停止服务并保留索引备份；代理环境变化时检查 Python SOCKS 依赖。

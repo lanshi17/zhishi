@@ -33,3 +33,9 @@ Next: configure `LLM_SUPPORTS_IMAGE_INPUT=true` and, if needed, `LLM_VISION_MODE
 [2026-08-15] Task: 项目定名 知食 (ZhīShí)
 Status: 产品身份改名完成 — README 标题与部署示例、package.json name (zhishi)、CLI usage、活跃 PRD 代号均已更新;PG 数据库/容器名等本地基础设施标识有意保留;archive/ 历史文档不改写
 Next: 可选 — 仓库目录 /mnt/data/Projects/Systems/CLI/wechat_claw 重命名为 zhishi
+[2026-08-19] Task: 启动知食微信服务
+Status: 首次启动因 PostgreSQL 127.0.0.1:5432 未运行失败; 已启动 wechat-claw-pg PostgreSQL 容器并完成自动迁移，微信 TUI 服务当前运行中
+Next: 保持 wechat-claw 与 wechat-claw-pg 运行；如需停止请分别停止服务与数据库容器
+[2026-08-19] Task: 修复并启用 LightRAG
+Status: 修正启动脚本以继承项目 OpenAI-compatible 配置，使用 SiliconFlow LLM + BAAI/bge-m3(1024d) 嵌入，安装 socksio 代理依赖并重建 47 个实体、78 个关系、23 个文本块向量；LightRAG 已在 127.0.0.1:9621 健康运行，混合检索验证返回鸡胸肉 165 kcal
+Next: 保持 lightrag 服务运行；若重建 Python 环境，补装 socksio 依赖
