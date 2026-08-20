@@ -39,6 +39,7 @@ Next: 保持 wechat-claw 与 wechat-claw-pg 运行；如需停止请分别停止
 [2026-08-19] Task: 修复并启用 LightRAG
 Status: 修正启动脚本以继承项目 OpenAI-compatible 配置，使用 SiliconFlow LLM + BAAI/bge-m3(1024d) 嵌入，安装 socksio 代理依赖并重建 47 个实体、78 个关系、23 个文本块向量；LightRAG 已在 127.0.0.1:9621 健康运行，混合检索验证返回鸡胸肉 165 kcal
 Next: 保持 lightrag 服务运行；若重建 Python 环境，补装 socksio 依赖
-[2026-08-20] Task: 统一环境变量文件设计
-Status: 已确认以 src/shared/schema.ts 为字段真源，统一 .env.example、本机 .env 排序去重，并同步 README；设计文档已记录
-Next: 生成实施计划并执行配置模板统一
+[2026-08-20] Task: 统一环境变量文件
+Status: 已按 schema 对齐 .env.example 与本机 .env 字段、分组和顺序，去除重复项，补齐 LLM_VISION_MODEL、TAVILY_API_KEY、ILINK_BOT_ID、ILINK_USER_ID，并同步 README；新增模板字段契约测试
+Verification: 模板测试通过；全量测试 35 个文件/246 个测试通过；typecheck 与 build 通过；.env 保持忽略且未进入变更集
+Next: 提交配置统一变更；不要提交 .env、command.log 或无关的 .gitignore 修改

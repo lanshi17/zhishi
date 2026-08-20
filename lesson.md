@@ -48,3 +48,10 @@
 - Attempts: 复现 `/health` 连接失败；检查 LightRAG v1.5.6 配置与日志；验证 SiliconFlow 的 LLM/嵌入接口；安装 `socksio`；停服后备份并使用当前配置全量重建 47 个实体、78 个关系和 23 个文本块向量；重启后分别执行健康检查、naive 检索和 hybrid 检索。
 - Resolution: `scripts/start-lightrag.sh` 现在加载项目 `.env`，显式配置 OpenAI-compatible LLM/embedding、1024 维且不发送不兼容的 `dimensions` 参数，默认复用现有文件存储，并仅监听 `127.0.0.1`。混合查询已返回“鸡胸肉每100克 165 kcal”。
 - Prevention: 更换嵌入模型或提供商时必须重建所有 VDB；保持 `EMBEDDING_MODEL`、`EMBEDDING_DIM`、`EMBEDDING_SEND_DIM` 与 API 能力一致；重建前先停止服务并保留索引备份；代理环境变化时检查 Python SOCKS 依赖。
+
+## 2026-08-20 - 全量测试缺少 PostgreSQL 测试库
+- Symptom: 首次运行 `pnpm test` 时，22 个数据库集成测试因 `database "wechat_claw_test" does not exist` 失败；模板一致性测试、typecheck 和 build 不受影响。
+- Cause: 当前 `wechat-claw-pg` 容器只创建了开发库 `wechat_claw`，未按 README 的测试配置创建 `wechat_claw_test`。
+- Attempts: 检查运行中的 PostgreSQL 容器及数据库列表，确认测试库缺失；创建 `wechat_claw_test` 后重新运行全量测试。
+- Resolution: 测试数据库创建成功，第二次 `pnpm test` 全部通过（35 个测试文件、246 个测试）。
+- Prevention: 在执行 PostgreSQL 集成测试前，先确认 `TEST_DATABASE_URL` 指向的数据库存在并可连接；将测试库创建纳入本地启动准备步骤。
