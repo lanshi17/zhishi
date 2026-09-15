@@ -4,7 +4,7 @@ coverage/
 dist/
 .worktrees/
 .claude/
-.env
+**/.env
 # In-place tsc emit (always use tsconfig.build.json → dist/)
 src/**/*.js
 src/**/*.d.ts
