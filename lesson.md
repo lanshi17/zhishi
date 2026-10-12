@@ -62,3 +62,10 @@
 - Attempts: 先比对失败文件清单，确认其全部为 DB 集成测试且新增的 `tests/shared/env-example.test.ts` 已通过；随后 `docker start wechat-claw-pg` 并轮询 `pg_isready` 至 accepting connections。
 - Resolution: 数据库就绪后重跑全量测试，35 个文件/246 个测试全部通过；typecheck 与 build 通过，master 快进合并后无回归。
 - Prevention: 合并或发布前先启动 `wechat-claw-pg` 并确认 5432 可连接；批量失败若集中在 DB 集成测试，应先判定环境因素再怀疑回归，避免把环境性失败当成代码问题。
+
+## 2026-10-12 - gh CLI 凭据失效导致无法自动创建 PR
+- Symptom: `gh pr create` 返回 `HTTP 401: Bad credentials (https://api.github.com/graphql)`；`gh auth status` 同时报 GH_TOKEN 无效与 keyring 登录失败。
+- Cause: 环境变量 `GH_TOKEN` 为无效 token；`~/.config/gh/hosts.yml` 中保存的 `oauth_token`（user: lanshi17）也已被 GitHub 拒绝。仓库为私有（未认证 REST 请求返回 403），因此不存在匿名创建 PR 的路径。
+- Attempts: 核对 `gh auth status`；用 `env -u GH_TOKEN` 排除环境变量干扰后重试（仍 401）；检查 hosts.yml、项目 `.env` 键名与 shell profile，确认无可用凭据；`git push` 走 SSH 仍正常，说明仅 HTTPS API 凭据失效。
+- Resolution: 无凭据无法建 PR；改为推送 `fix/lightrag-startup`（ca830e1）并给出 `compare/master...fix/lightrag-startup` 链接，PR 创建交由人工完成。
+- Prevention: 涉及 PR 自动化前先执行 `gh auth status` 校验凭据；不要在环境中注入过期 `GH_TOKEN` 覆盖有效凭据；token 轮换后同步更新 `hosts.yml`，并区分 SSH 推送权限与 API 凭据是两套独立凭据。

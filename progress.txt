@@ -48,3 +48,8 @@ Next: 提交配置统一变更；不要提交 .env、command.log 或无关的 .g
 Status: master 以快进方式合并至 a7636f2，收敛环境变量统一工作（5f4040f 设计文档、ec2025c 模板统一、a7636f2 忽略规则）；project-conventions-alignment 与 worktree-project-conventions-alignment-exec 已完全包含在 master 历史中，无可合并提交
 Verification: 合并后 typecheck 通过；全量测试 35 个文件/246 个测试通过；build 通过（前提是 wechat-claw-pg 容器已启动，否则 11 个 DB 集成测试文件因 ECONNREFUSED 127.0.0.1:5432 失败）
 Next: 待人工审核确认后将 master 推送至 origin/master（当前领先 5 个提交）；未跟踪的 command.log 保持不提交
+
+[2026-10-12] Task: 发布 master 合并（PR 评审路径）
+Status: 已推送 fix/lightrag-startup 至 origin（ca830e1，含合并记录提交），本地 master 同步指向 ca830e1、领先 origin/master 5 个提交；PR 创建被凭据阻断 — gh pr create 返回 HTTP 401 Bad credentials（环境 GH_TOKEN 无效，~/.config/gh/hosts.yml 的 oauth_token 亦被拒绝）
+Verification: git push 成功；ca830e1 内容上 typecheck 通过、全量 35 文件/246 测试通过、build 通过（本次仅新增 progress.txt 与 lesson.md 记录）
+Next: 人工执行 `gh auth login` 后运行 `gh pr create --base master --head fix/lightrag-startup`，或使用 https://github.com/lanshi17/zhishi/compare/master...fix/lightrag-startup 创建 PR
