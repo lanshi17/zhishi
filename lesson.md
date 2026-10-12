@@ -55,3 +55,10 @@
 - Attempts: 检查运行中的 PostgreSQL 容器及数据库列表，确认测试库缺失；创建 `wechat_claw_test` 后重新运行全量测试。
 - Resolution: 测试数据库创建成功，第二次 `pnpm test` 全部通过（35 个测试文件、246 个测试）。
 - Prevention: 在执行 PostgreSQL 集成测试前，先确认 `TEST_DATABASE_URL` 指向的数据库存在并可连接；将测试库创建纳入本地启动准备步骤。
+
+## 2026-10-12 - 合并到主分支后全量测试因 PostgreSQL 容器停止而失败
+- Symptom: 快进合并到 master 后首次 `pnpm test`，11 个测试文件失败、2 个用例失败，错误为 `connect ECONNREFUSED 127.0.0.1:5432`。
+- Cause: `wechat-claw-pg` 容器处于 Exited 状态，本机 5432 无监听。失败集合全部是依赖 PostgreSQL 的集成测试（tests/store/*、tests/tasks/service、tests/health/report-generator、tests/app/*），与本次合并内容（.env.example、README、docs、.gitignore、单个模板测试）无因果关系。
+- Attempts: 先比对失败文件清单，确认其全部为 DB 集成测试且新增的 `tests/shared/env-example.test.ts` 已通过；随后 `docker start wechat-claw-pg` 并轮询 `pg_isready` 至 accepting connections。
+- Resolution: 数据库就绪后重跑全量测试，35 个文件/246 个测试全部通过；typecheck 与 build 通过，master 快进合并后无回归。
+- Prevention: 合并或发布前先启动 `wechat-claw-pg` 并确认 5432 可连接；批量失败若集中在 DB 集成测试，应先判定环境因素再怀疑回归，避免把环境性失败当成代码问题。

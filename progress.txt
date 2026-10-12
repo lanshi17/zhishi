@@ -43,3 +43,8 @@ Next: 保持 lightrag 服务运行；若重建 Python 环境，补装 socksio �
 Status: 已按 schema 对齐 .env.example 与本机 .env 字段、分组和顺序，去除重复项，补齐 LLM_VISION_MODEL、TAVILY_API_KEY、ILINK_BOT_ID、ILINK_USER_ID，并同步 README；新增模板字段契约测试
 Verification: 模板测试通过；全量测试 35 个文件/246 个测试通过；typecheck 与 build 通过；.env 保持忽略且未进入变更集
 Next: 提交配置统一变更；不要提交 .env、command.log 或无关的 .gitignore 修改
+
+[2026-10-12] Task: 合并 fix/lightrag-startup 到主分支
+Status: master 以快进方式合并至 a7636f2，收敛环境变量统一工作（5f4040f 设计文档、ec2025c 模板统一、a7636f2 忽略规则）；project-conventions-alignment 与 worktree-project-conventions-alignment-exec 已完全包含在 master 历史中，无可合并提交
+Verification: 合并后 typecheck 通过；全量测试 35 个文件/246 个测试通过；build 通过（前提是 wechat-claw-pg 容器已启动，否则 11 个 DB 集成测试文件因 ECONNREFUSED 127.0.0.1:5432 失败）
+Next: 待人工审核确认后将 master 推送至 origin/master（当前领先 5 个提交）；未跟踪的 command.log 保持不提交
