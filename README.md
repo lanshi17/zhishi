@@ -1,5 +1,8 @@
 # 知食 ZhīShí
 
+[![CI](https://github.com/lanshi17/zhishi/actions/workflows/ci.yml/badge.svg)](https://github.com/lanshi17/zhishi/actions/workflows/ci.yml)
+[![Release](https://github.com/lanshi17/zhishi/actions/workflows/release.yml/badge.svg)](https://github.com/lanshi17/zhishi/actions/workflows/release.yml)
+
 个人健康热量追踪助手 —— 通过微信发送自然语言记录每日饮食摄入与运动消耗，使用 LightRAG 知识库查询精确热量数据，自动生成日/周/月/季/年热量报告。
 
 A personal health calorie tracking assistant. Users send natural language via WeChat to record daily diet and exercise. An agent pipeline parses intents, queries a LightRAG knowledge base for accurate calorie data, persists records to PostgreSQL, and generates periodic reports.
@@ -23,8 +26,11 @@ WeChat Message → iLink Gateway → Health Pipeline → PostgreSQL
 
 ## Install
 
+Requires [Bun](https://bun.sh) 1.4.2 (pinned in `.bun-version`; the app relies on
+Bun's automatic `.env` loading).
+
 ```bash
-pnpm install
+bun install
 ```
 
 ## Configure
@@ -81,14 +87,15 @@ diet tool.
 
 ```bash
 docker run -d --name zhishi-pg \
-  -e POSTGRES_DB=zhishi \
+  -e POSTGRES_DB=wechat_claw \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -p 5432:5432 \
   pgvector/pgvector:pg18
 ```
 
-Migrations run automatically on startup.
+Migrations run automatically on startup. `wechat_claw` is the database name
+referenced by `.env.example`.
 
 ### LightRAG (optional but recommended)
 
@@ -97,28 +104,47 @@ Migrations run automatically on startup.
 bash scripts/start-lightrag.sh
 
 # Import knowledge base data
-npx tsx scripts/init-knowledge-base.ts
+bun scripts/init-knowledge-base.ts
 ```
 
 ### Test database
 
+Integration tests connect to `TEST_DATABASE_URL`, which defaults to
+`postgres://postgres:postgres@localhost:5432/wechat_claw_test`. Create that
+database inside the same PostgreSQL container (a second container cannot bind
+port 5432 again):
+
 ```bash
-docker run -d --name zhishi-pg-test \
-  -e POSTGRES_DB=zhishi_test \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  pgvector/pgvector:pg18
+docker exec zhishi-pg createdb -U postgres wechat_claw_test
 ```
 
 ## Commands
 
 ```bash
-pnpm test          # run all tests (requires test PG)
-npx tsc --noEmit   # type check
-pnpm run build     # build
-pnpm run start:wechat  # start runtime
+bun run test          # run all tests (requires test PG)
+bun run typecheck     # type check (tsc --noEmit)
+bun run build         # build to dist/
+bun run start:wechat  # start runtime
 ```
+
+## CI and release
+
+- `.github/workflows/ci.yml` runs the full gate on every push and pull request
+  targeting `master` or `dev`.
+- `.github/workflows/verify.yml` holds the gate itself, so pull requests and
+  releases can never drift: `bun install --frozen-lockfile`, `bun run typecheck`,
+  `bun run test` against a `pgvector/pgvector:pg18` service container, then
+  `bun run build`.
+- `.github/workflows/release.yml` runs on `v*` tags: it reuses the gate and
+  publishes a GitHub release with the compiled `dist/` bundle attached.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`bun.lock` is committed, so CI installs are reproducible; `package-lock.json`,
+`pnpm-lock.yaml`, and `yarn.lock` are ignored by `.gitignore`.
 
 ## Usage examples
 

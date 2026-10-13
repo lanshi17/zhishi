@@ -10,9 +10,9 @@
 
 ### 2.1 依赖与运行时管理
 
-1. 项目必须且只能使用现代化管理工具启动与管理依赖，例如 `pnpm`、`nvm`、`cargo`、`uv`、`cmake` 等。
+1. 项目必须且只能使用现代化管理工具启动与管理依赖，例如 `bun`、`cargo`、`uv`、`cmake` 等。
 2. 禁止直接依赖系统全局环境、手工污染系统解释器/运行时、或使用不可追踪的危险方式安装与管理依赖。
-3. 对当前仓库，Node.js 版本必须通过 `nvm` 等版本管理工具控制，JavaScript/TypeScript 依赖必须通过 `pnpm` 管理。
+3. 对当前仓库，运行时与 JavaScript/TypeScript 依赖必须通过 `bun` 统一管理：版本由根目录 `.bun-version` 固定，锁文件为 `bun.lock`，安装命令为 `bun install`（CI 必须使用 `bun install --frozen-lockfile`）；禁止提交 `package-lock.json`、`yarn.lock`、`pnpm-lock.yaml` 等其它包管理器锁文件。
 4. 新增工具链前，必须先确认其必要性、兼容性与维护成本，避免引入重复工具。
 
 ### 2.2 日志与测试框架
@@ -20,7 +20,7 @@
 1. 日志必须统一使用 **pino**。
 2. 日志文件统一写入根目录 **logs/**。
 3. 日志文件名必须使用时间戳格式：`YYYY-MM-DD_HHMMSS.log`。
-4. 测试框架必须统一使用 **Vitest**。
+4. 测试框架必须统一使用 **Vitest**，统一通过 `bun run test` 执行。
 5. 任何新增测试、调试脚本或运行入口，不得绕过上述日志与测试规范。
 
 ### 2.3 代码规范
@@ -142,7 +142,7 @@
 
 除上述硬性规则外，项目还必须遵守以下补充规则：
 
-1. **CI/CD 一致性规则**：本地验证命令与 CI 执行命令必须尽量一致，避免“本地通过、流水线失败”的分叉。
+1. **CI/CD 一致性规则**：本地验证命令与 CI 执行命令必须尽量一致，避免“本地通过、流水线失败”的分叉。统一门禁位于 `.github/workflows/verify.yml`（`bun install --frozen-lockfile` → `bun run typecheck` → `bun run test` → `bun run build`），由 `.github/workflows/ci.yml`（push/PR 到 `master`、`dev`）与 `.github/workflows/release.yml`（推送 `v*` 标签）复用；发布只允许产出仓库内制品（GitHub Release 附带 `dist/` 打包件），不得在 CI 中写入未确认的部署主机或密钥。
 2. **可追踪性规则**：任何重要实现、排障、设计决策都必须能在代码、文档、`progress.txt` 或 `lesson.md` 中追溯到依据。
 3. **最小改动规则**：每次修改应尽量控制影响面，只处理当前确认范围内的问题，避免顺手扩大重构范围。
 4. **文档同步规则**：只要行为、命令、目录、配置或流程发生变化，相关文档必须同步更新。
