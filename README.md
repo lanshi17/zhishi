@@ -49,12 +49,19 @@ Required variables:
 
 Optional:
 
+- `LLM_SUPPORTS_IMAGE_INPUT`: set to `true` when the configured model accepts image inputs
+- `LLM_VISION_MODEL`: optional vision-capable model override
+- `PG_POOL_MAX`: maximum PostgreSQL pool size (default: driver setting)
+- `PG_POOL_IDLE_TIMEOUT_MS`: idle PostgreSQL connection timeout in milliseconds
+- `LIGHTRAG_API_KEY`: optional LightRAG API key
+- `LIGHTRAG_TIMEOUT_MS`: LightRAG request timeout in milliseconds
+- `TAVILY_API_KEY`: optional Tavily web-search API key
 - `HEALTH_DEFAULT_CALORIE_GOAL`: default daily intake goal (default: 2000)
 - `HEALTH_DEFAULT_BURN_GOAL`: default daily burn goal (default: 500)
 - `LLM_CONTEXT_WINDOW`: per-user conversation-history token budget (default: `256000`)
-- `LLM_SUPPORTS_IMAGE_INPUT`: set to `true` when the configured model accepts image inputs
-- `LLM_VISION_MODEL`: optional vision-capable model override
 - `ILINK_BOT_TOKEN`: iLink WeChat Bot token for real WeChat integration
+- `ILINK_BOT_ID`: optional iLink bot identifier populated by QR setup
+- `ILINK_USER_ID`: optional iLink user identifier populated by QR setup
 
 The history budget uses a conservative character-based token estimate, so a
 smaller custom value retains fewer, more recent messages. Both user messages
