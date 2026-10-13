@@ -63,3 +63,8 @@ Next: 本次进度记录提交需经人工审核后推送 master（不得绕过 
 Status: 新增 `.github/workflows/verify.yml`（可复用门禁：`bun install --frozen-lockfile` → `bun run typecheck` → `bun run test`（`pgvector/pgvector:pg18` service 容器 + 新建 `wechat_claw_test`）→ `bun run build`，上传 `dist-<sha>` 制品）、`ci.yml`（push/PR 到 master、dev 复用门禁）、`release.yml`（`v*` 标签 → 复跑门禁并发布 GitHub Release，附带 `dist/` 打包件）。工具链按新规范统一迁移到 bun 1.4.2：`.bun-version` 固定版本、提交 `bun.lock`、删除 `package-lock.json`/`pnpm-lock.yaml`/`pnpm-workspace.yaml`、scripts 改为 `bun run` 与 `bun dist/*`。AGENTS.md 2.1/2.2/7.1 与 README 同步更新（badge、CI 与发布章节、测试库名修正为 `wechat_claw_test`、`npx tsx` → `bun`、PostgreSQL 示例库名修正为 `wechat_claw`）
 Verification: 干净克隆（无 .env）逐步复现 CI 全部步骤：`bun install --frozen-lockfile`（84 包）、psql 建库、typecheck、`bun run test`（35 文件/246 测试，针对全新数据库）、`bun run build`；工作树复跑同样 246 通过、typecheck 与 build 通过
 Next: 仓库 About（description/topics/homepage）仍需人工凭据：`gh api -X PATCH repos/lanshi17/zhishi` 返回 401 Bad credentials，命令与建议内容见 lesson.md
+
+[2026-10-13] Task: 完成仓库 About、分支保护并确认首个 CI run
+Status: 凭据恢复（`gh auth login` 存于 keyring，账号 lanshi17）后完成仓库 About：描述已设置，10 个 topics（agent、bun、calorie-tracker、health、lightrag、llm、postgresql、rag、typescript、wechat-bot），homepage 有意留空；`master` 启用分支保护，必需状态检查为 CI 的 `Verify / typecheck / test / build`（strict=true，enforce_admins=false，不要求 PR，因此直推仍可用）
+Verification: `gh repo view --json description,homepageUrl,repositoryTopics` 回读一致；`gh api repos/lanshi17/zhishi/commits/7cf8278/check-runs` 显示 `Verify / typecheck / test / build [completed/success]`；`gh run list` 三次 CI 均 success（最新 run 38339202268，约 40s）；分支保护 PUT 回读 contexts 正确
+Next: 需要切发布时执行 `git tag v0.1.0 && git push origin v0.1.0`（release.yml 会复跑门禁并产出 GitHub Release 附件）；若要强制 PR 流程，再开启 required_pull_request_reviews
