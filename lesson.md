@@ -69,3 +69,17 @@
 - Attempts: 核对 `gh auth status`；用 `env -u GH_TOKEN` 排除环境变量干扰后重试（仍 401）；检查 hosts.yml、项目 `.env` 键名与 shell profile，确认无可用凭据；`git push` 走 SSH 仍正常，说明仅 HTTPS API 凭据失效。
 - Resolution: 无凭据无法建 PR；改为推送 `fix/lightrag-startup`（ca830e1）并给出 `compare/master...fix/lightrag-startup` 链接，PR 创建交由人工完成。
 - Prevention: 涉及 PR 自动化前先执行 `gh auth status` 校验凭据；不要在环境中注入过期 `GH_TOKEN` 覆盖有效凭据；token 轮换后同步更新 `hosts.yml`，并区分 SSH 推送权限与 API 凭据是两套独立凭据。
+
+## 2026-10-13 - bun 迁移：vitest 兼容性与 .env 自动加载
+- Symptom: 迁移前存在两个未知风险——Vitest 官方只支持 Node 运行时，担心 `bun run test` 无法执行 246 个测试；同时应用只读取 `process.env`，担心 bun 下的环境变量加载方式与原先不同。
+- Cause: 仓库原用 pnpm + Node 24（`packageManager: pnpm@10.17.1`），且 `package-lock.json` 是唯一被跟踪的锁文件，`pnpm-lock.yaml` 被 `.gitignore` 忽略，CI 无法做可复现安装。
+- Attempts: 先后执行 `bun install`（自动从 `package-lock.json` 迁移生成 `bun.lock`，84 包）、`bun run typecheck`、`bun run test`、`bun run build`，再以干净克隆（无 `.env`、无 `node_modules`）从零复现全部 CI 步骤，并针对全新数据库（`wechat_claw_ci_dryrun`）运行集成测试。
+- Resolution: Vitest 3.2.4 在 bun 1.4.2 下完整通过 35 文件/246 测试；`tsc` 类型检查与构建同样正常；bun 会自动加载 `.env`（`bun run start:mvp` 实测已读到 `.env` 中的 LLM 配置），因此 README 明确标注该依赖。锁文件策略收敛为只保留 `bun.lock`，删除 `package-lock.json`、`pnpm-lock.yaml` 与失效的 `pnpm-workspace.yaml`。
+- Prevention: 迁移包管理器后必须在干净克隆中复现 CI 全部步骤，避免依赖本地 `node_modules` 或 `.env` 的假通过；依赖版本以 `bun.lock` 为准，升级依赖后重新跑全量测试；新增运行时假设（如自动加载 `.env`）必须写入 README。
+
+## 2026-10-13 - gh 无有效凭据导致无法完善仓库 About
+- Symptom: `gh api -X PATCH repos/lanshi17/zhishi -f description=... -f 'topics[]=...'` 返回 `401 Bad credentials`，仓库 About 的描述、主页与 topics 无法通过 API 写入。
+- Cause: 与 2026-10-12 记录同源——环境 `GH_TOKEN` 与 `~/.config/gh/hosts.yml` 的 `oauth_token` 均被 GitHub 拒绝；SSH 推送可用但 API 需要独立凭据，仓库为私有，未认证请求返回 403。
+- Attempts: 复查 `gh auth status`；`env -u GH_TOKEN` 排除环境变量干扰后重试 PATCH（仍 401）；确认 `.env`、shell profile、`~/.netrc`、`~/.git-credentials` 中均无可用 token。
+- Resolution: About 变更改为人工执行：`gh auth login` 后运行 `gh repo edit lanshi17/zhishi --description "<描述>" --add-topic wechat-bot --add-topic calorie-tracker --add-topic lightrag --add-topic rag --add-topic typescript --add-topic bun --add-topic postgresql`，或在网页 About 面板填写（建议描述：知食 ZhīShí — 个人健康热量追踪微信助手：LightRAG + PostgreSQL + Bun/TypeScript；topics：wechat-bot、health、calorie-tracker、lightrag、rag、agent、typescript、bun、postgresql、llm；homepage 暂无站点可留空）。
+- Prevention: 把 About/分支保护等仓库级设置记入待办并标注凭据前提；CI 与发布流程不要假设存在 PAT，凡需要 API 凭据的步骤都先跑 `gh auth status` 判定。
