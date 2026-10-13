@@ -87,6 +87,6 @@
 ## 2026-10-13 - GH_TOKEN 覆盖导致 gh auth login 无法保存凭据
 - Symptom: `gh auth login` 直接退出（code 1），提示 "The value of the GH_TOKEN environment variable is being used for authentication. To have GitHub CLI store credentials instead, first clear the value from the environment."
 - Cause: `~/.zshenv` 第 56 行存在 `export GH_TOKEN=<PAT>`，该 PAT 已被 GitHub 拒绝（API 返回 401 Bad credentials）；zsh 每次启动都会注入，且该值进一步传播到 tmux 服务端全局环境与 `systemd --user` 环境，因此交互式登录和新开终端都带着它。
-- Attempts: 用 `grep` 定位到 `~/.zshenv` 的导出语句；沿 `ps`/`/proc/<pid>/environ` 进程链确认导出者；检查 `systemctl --user show-environment` 与 `tmux show-environment -g` 确认污染范围。
+- Attempts: 用 `grep` 定位到 `~/.zshenv` 的导出语句；沿 `ps`/`/proc/<pid>/environ` 进程链确认导出者；检查 `systemctl --user show-environment` 与 `tmux show-environment -g` 确认污染范围。清理后在同一面板重跑仍报同一错误——已运行的 shell 进程内存中依旧持有该变量；实测新建 tmux 会话内启动的 zsh `env | grep -c '^GH_TOKEN='` 为 0，且 `/etc/zsh`、`/etc/profile.d`、`~/.zshrc`、`~/.zprofile`、`~/.config/environment.d` 均无导出。
 - Resolution: 注释掉 `.zshenv` 中的导出并写入说明；执行 `systemctl --user unset-environment GH_TOKEN` 与 `tmux setenv -gu GH_TOKEN` 清理已传播的环境；确认新启动的 zsh（在无 GH_TOKEN 的父环境下）不再看到该变量，`gh auth status` 转为提示 `gh auth login -h github.com`。
-- Prevention: 需要 `gh auth login` 保存凭据时，先确保 `GH_TOKEN`/`GITHUB_TOKEN` 不在环境里（`env -u GH_TOKEN gh auth login` 或新开窗口）；环境变量优先级高于 keyring 与 hosts.yml，失效的 token 应直接移除而不是留着；该 PAT 曾被打印到会话记录中，应在 GitHub 设置里吊销。
+- Prevention: 需要 `gh auth login` 保存凭据时，先确保 `GH_TOKEN`/`GITHUB_TOKEN` 不在环境里——最稳妥的是 `env -u GH_TOKEN gh auth login ...`，因为已运行的面板无法通过改配置文件消除内存中的变量（或 `unset GH_TOKEN` 后重试）；环境变量优先级高于 keyring 与 hosts.yml，失效的 token 应直接移除而不是留着；该 PAT 曾被打印到会话记录中，应在 GitHub 设置里吊销。
