@@ -83,3 +83,10 @@
 - Attempts: 复查 `gh auth status`；`env -u GH_TOKEN` 排除环境变量干扰后重试 PATCH（仍 401）；确认 `.env`、shell profile、`~/.netrc`、`~/.git-credentials` 中均无可用 token。
 - Resolution: About 变更改为人工执行：`gh auth login` 后运行 `gh repo edit lanshi17/zhishi --description "<描述>" --add-topic wechat-bot --add-topic calorie-tracker --add-topic lightrag --add-topic rag --add-topic typescript --add-topic bun --add-topic postgresql`，或在网页 About 面板填写（建议描述：知食 ZhīShí — 个人健康热量追踪微信助手：LightRAG + PostgreSQL + Bun/TypeScript；topics：wechat-bot、health、calorie-tracker、lightrag、rag、agent、typescript、bun、postgresql、llm；homepage 暂无站点可留空）。
 - Prevention: 把 About/分支保护等仓库级设置记入待办并标注凭据前提；CI 与发布流程不要假设存在 PAT，凡需要 API 凭据的步骤都先跑 `gh auth status` 判定。
+
+## 2026-10-13 - GH_TOKEN 覆盖导致 gh auth login 无法保存凭据
+- Symptom: `gh auth login` 直接退出（code 1），提示 "The value of the GH_TOKEN environment variable is being used for authentication. To have GitHub CLI store credentials instead, first clear the value from the environment."
+- Cause: `~/.zshenv` 第 56 行存在 `export GH_TOKEN=<PAT>`，该 PAT 已被 GitHub 拒绝（API 返回 401 Bad credentials）；zsh 每次启动都会注入，且该值进一步传播到 tmux 服务端全局环境与 `systemd --user` 环境，因此交互式登录和新开终端都带着它。
+- Attempts: 用 `grep` 定位到 `~/.zshenv` 的导出语句；沿 `ps`/`/proc/<pid>/environ` 进程链确认导出者；检查 `systemctl --user show-environment` 与 `tmux show-environment -g` 确认污染范围。
+- Resolution: 注释掉 `.zshenv` 中的导出并写入说明；执行 `systemctl --user unset-environment GH_TOKEN` 与 `tmux setenv -gu GH_TOKEN` 清理已传播的环境；确认新启动的 zsh（在无 GH_TOKEN 的父环境下）不再看到该变量，`gh auth status` 转为提示 `gh auth login -h github.com`。
+- Prevention: 需要 `gh auth login` 保存凭据时，先确保 `GH_TOKEN`/`GITHUB_TOKEN` 不在环境里（`env -u GH_TOKEN gh auth login` 或新开窗口）；环境变量优先级高于 keyring 与 hosts.yml，失效的 token 应直接移除而不是留着；该 PAT 曾被打印到会话记录中，应在 GitHub 设置里吊销。
