@@ -1,8 +1,9 @@
 name: Release
 
-# Tag a commit with v* (for example `git tag v0.1.0 && git push origin v0.1.0`)
+# Tag a commit with v* (for example `git tag v1.0.0 && git push origin v1.0.0`)
 # to run the full quality gate and publish a GitHub release with the compiled
-# dist/ bundle attached.
+# dist/ bundle attached. Release notes come from docs/releases/<tag>.md when that
+# file exists, otherwise GitHub generates them from the commit range.
 
 on:
   push:
@@ -22,6 +23,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Check tag matches package.json version
+        run: |
+          version=$(bun pm pkg get version | tr -d '"')
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+          echo "releasing ${GITHUB_REF_NAME} (package.json ${version})"
+
       - name: Download build output
         uses: actions/download-artifact@v5
         with:
@@ -35,6 +53,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" "zhishi-${GITHUB_REF_NAME}.tar.gz" \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+          if [ -f "docs/releases/${GITHUB_REF_NAME}.md" ]; then
+            gh release create "${GITHUB_REF_NAME}" "zhishi-${GITHUB_REF_NAME}.tar.gz" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes-file "docs/releases/${GITHUB_REF_NAME}.md"
+          else
+            gh release create "${GITHUB_REF_NAME}" "zhishi-${GITHUB_REF_NAME}.tar.gz" \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi

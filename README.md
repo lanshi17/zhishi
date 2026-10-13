@@ -135,12 +135,16 @@ bun run start:wechat  # start runtime
   releases can never drift: `bun install --frozen-lockfile`, `bun run typecheck`,
   `bun run test` against a `pgvector/pgvector:pg18` service container, then
   `bun run build`.
-- `.github/workflows/release.yml` runs on `v*` tags: it reuses the gate and
-  publishes a GitHub release with the compiled `dist/` bundle attached.
+- `.github/workflows/release.yml` runs on `v*` tags: it reuses the gate, checks
+  that the tag matches `package.json` (`v1.0.0` ↔ `1.0.0`), and publishes a
+  GitHub release with the compiled `dist/` bundle attached. Release notes are
+  taken from `docs/releases/<tag>.md` when that file exists, otherwise GitHub
+  generates them from the commit range.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+# bump "version" in package.json, add docs/releases/<tag>.md, then:
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 `bun.lock` is committed, so CI installs are reproducible; `package-lock.json`,
