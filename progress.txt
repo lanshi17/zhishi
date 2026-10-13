@@ -68,3 +68,8 @@ Next: 仓库 About（description/topics/homepage）仍需人工凭据：`gh api 
 Status: 凭据恢复（`gh auth login` 存于 keyring，账号 lanshi17）后完成仓库 About：描述已设置，10 个 topics（agent、bun、calorie-tracker、health、lightrag、llm、postgresql、rag、typescript、wechat-bot），homepage 有意留空；`master` 启用分支保护，必需状态检查为 CI 的 `Verify / typecheck / test / build`（strict=true，enforce_admins=false，不要求 PR，因此直推仍可用）
 Verification: `gh repo view --json description,homepageUrl,repositoryTopics` 回读一致；`gh api repos/lanshi17/zhishi/commits/7cf8278/check-runs` 显示 `Verify / typecheck / test / build [completed/success]`；`gh run list` 三次 CI 均 success（最新 run 38339202268，约 40s）；分支保护 PUT 回读 contexts 正确
 Next: 需要切发布时执行 `git tag v0.1.0 && git push origin v0.1.0`（release.yml 会复跑门禁并产出 GitHub Release 附件）；若要强制 PR 流程，再开启 required_pull_request_reviews
+
+[2026-10-13] Task: 发布正式版 v1.0.0
+Status: `package.json` 版本 0.0.0 → 1.0.0；新增 `docs/releases/v1.0.0.md`（人工整理的发布说明）；`release.yml` 增加 tag 与版本一致性闸门（tag 必须等于 `v${package.json.version}`，否则构建前失败）并支持以 `docs/releases/<tag>.md` 作为 Release notes（文件不存在时回退 `--generate-notes`）；推送 annotated tag `v1.0.0` 触发发布
+Verification: Release run 38340038144 success（57s）；GitHub Release v1.0.0 已发布（非草稿、非预发布，https://github.com/lanshi17/zhishi/releases/tag/v1.0.0），附件 `zhishi-v1.0.0.tar.gz`（40086 字节）下载校验：80 个条目，含 `dist/main-entrypoint.js`、`dist/smoke.js`、`dist/store/migrations.js`；Release body 为 `docs/releases/v1.0.0.md` 内容；本地门禁复跑通过（246 测试、typecheck、build）；tag 指向 c739de0 且推送时 master 位于同一提交
+Next: 后续版本沿用 README「CI and release」流程：改 `package.json` 版本 → 新增 `docs/releases/<tag>.md` → `git tag <tag> && git push origin <tag>`
