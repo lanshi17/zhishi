@@ -53,3 +53,8 @@ Next: 待人工审核确认后将 master 推送至 origin/master（当前领先 
 Status: 已推送 fix/lightrag-startup 至 origin（ca830e1，含合并记录提交），本地 master 同步指向 ca830e1、领先 origin/master 5 个提交；PR 创建被凭据阻断 — gh pr create 返回 HTTP 401 Bad credentials（环境 GH_TOKEN 无效，~/.config/gh/hosts.yml 的 oauth_token 亦被拒绝）
 Verification: git push 成功；ca830e1 内容上 typecheck 通过、全量 35 文件/246 测试通过、build 通过（本次仅新增 progress.txt 与 lesson.md 记录）
 Next: 人工执行 `gh auth login` 后运行 `gh pr create --base master --head fix/lightrag-startup`，或使用 https://github.com/lanshi17/zhishi/compare/master...fix/lightrag-startup 创建 PR
+
+[2026-10-13] Task: 确认 PR #1 合并并同步本地 master
+Status: PR #1（fix/lightrag-startup → master）已由人工合并；本地 master 快进至 063861e（Merge pull request #1 from lanshi17/fix/lightrag-startup），与 origin/master 完全一致。合并结果树与已验证的 2b4b261 相同，无内容漂移。已合并的 fix/lightrag-startup 分支按仓库既有习惯保留（未删除本地与远端分支）
+Verification: git diff 2b4b261 origin/master 为空；git rev-list --count master...origin/master 为 0/0；环境模板统一与环境变量文档现已进入 master
+Next: 本次进度记录提交需经人工审核后推送 master（不得绕过 AGENTS.md 5.1 直接推送）
