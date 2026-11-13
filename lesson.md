@@ -90,3 +90,13 @@
 - Attempts: 用 `grep` 定位到 `~/.zshenv` 的导出语句；沿 `ps`/`/proc/<pid>/environ` 进程链确认导出者；检查 `systemctl --user show-environment` 与 `tmux show-environment -g` 确认污染范围。清理后在同一面板重跑仍报同一错误——已运行的 shell 进程内存中依旧持有该变量；实测新建 tmux 会话内启动的 zsh `env | grep -c '^GH_TOKEN='` 为 0，且 `/etc/zsh`、`/etc/profile.d`、`~/.zshrc`、`~/.zprofile`、`~/.config/environment.d` 均无导出。
 - Resolution: 注释掉 `.zshenv` 中的导出并写入说明；执行 `systemctl --user unset-environment GH_TOKEN` 与 `tmux setenv -gu GH_TOKEN` 清理已传播的环境；确认新启动的 zsh（在无 GH_TOKEN 的父环境下）不再看到该变量，`gh auth status` 转为提示 `gh auth login -h github.com`。
 - Prevention: 需要 `gh auth login` 保存凭据时，先确保 `GH_TOKEN`/`GITHUB_TOKEN` 不在环境里——最稳妥的是 `env -u GH_TOKEN gh auth login ...`，因为已运行的面板无法通过改配置文件消除内存中的变量（或 `unset GH_TOKEN` 后重试）；环境变量优先级高于 keyring 与 hosts.yml，失效的 token 应直接移除而不是留着；该 PAT 曾被打印到会话记录中，应在 GitHub 设置里吊销。
+
+## 2026-11-13 - 飞书联调：模型不可用、LightRAG venv 失效、模型不调用工具
+- Symptom: 飞书长连接可建立，但 agent 回合必失败。复现出三个独立原因：
+  (1) LLM 返回 `403 {"code":30003,"message":"Model disabled."}`，`.env` 里的 `nex-agi/Nex-N2-Pro` 在该 key 下不可用；
+  (2) `scripts/start-lightrag.sh` 直接 `exec .venv-lightrag/bin/lightrag-server`，脚本 shebang 指向仓库搬迁前的旧路径 `/mnt/data/Projects/Code/wechat_claw/...`，报 "错误的解释器"；
+  (3) DeepSeek-V3.2 对"记录早餐"直接追问身体信息、不调用工具，触发 `LLM must call at least one tool`。
+- Cause: 模型权限变更；venv 用绝对路径写入 shebang，仓库移动后失效；`requireToolCall` 只在最终回复时才校验，模型一次不听话就整轮失败。
+- Attempts: `GET /v1/models` 取可用模型；对 4 个候选做带 `tools` 的真实请求（均 `tool_calls=1`）；改用 `Pro/deepseek-ai/DeepSeek-V3.2` 后复现 (3)；对 `/query` 用 30s 超时误判 RAG 不可用，放宽到 90s 后 9.2s 返回 165 kcal。
+- Resolution: 换用可用模型；`start-lightrag.sh` 改为 `exec "$VENV_DIR/bin/python3" "$VENV_DIR/bin/lightrag-server"`；`src/agent/loop.ts` 在最终回复缺工具调用时追加一次"系统提醒"重试（最多 2 次）后再抛错，保留"绝不无工具作答"的约束。
+- Prevention: 换模型前先打一发 `/v1/models` + 带 tools 的探活；启动脚本一律用显式解释器而不是依赖 shebang；`requireToolCall` 这类硬约束要留重试余量，否则小模型的一次偏差就会变成用户可见的"处理失败"。
