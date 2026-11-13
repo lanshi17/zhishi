@@ -68,7 +68,7 @@ export LIGHTRAG_DOC_STATUS_STORAGE="${LIGHTRAG_DOC_STATUS_STORAGE:-JsonDocStatus
 export LIGHTRAG_GRAPH_STORAGE="${LIGHTRAG_GRAPH_STORAGE:-NetworkXStorage}"
 export LIGHTRAG_VECTOR_STORAGE="${LIGHTRAG_VECTOR_STORAGE:-NanoVectorDBStorage}"
 
-exec "$VENV_DIR/bin/lightrag-server" \
+exec "$VENV_DIR/bin/python3" "$VENV_DIR/bin/lightrag-server" \
   --host 127.0.0.1 \
   --port 9621 \
   --llm-binding openai \
