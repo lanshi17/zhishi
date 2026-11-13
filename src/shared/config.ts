@@ -86,5 +86,21 @@ export function loadConfig(env: Record<string, string | undefined>) {
     ilinkBotToken: parsed.ILINK_BOT_TOKEN,
     ilinkBotId: parsed.ILINK_BOT_ID,
     ilinkUserId: parsed.ILINK_USER_ID,
+
+    feishu: {
+      enabled:
+        parsed.FEISHU_ENABLED !== "false"
+        && Boolean(parsed.FEISHU_APP_ID && parsed.FEISHU_APP_SECRET),
+      appId: parsed.FEISHU_APP_ID ?? "",
+      appSecret: parsed.FEISHU_APP_SECRET ?? "",
+      allowedOpenIds: (parsed.FEISHU_ALLOWED_OPEN_IDS ?? "")
+        .split(",")
+        .map((openId) => openId.trim())
+        .filter((openId) => openId.length > 0),
+      allowedChatIds: (parsed.FEISHU_ALLOWED_CHAT_IDS ?? "")
+        .split(",")
+        .map((chatId) => chatId.trim())
+        .filter((chatId) => chatId.length > 0),
+    },
   };
 }

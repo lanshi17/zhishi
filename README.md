@@ -68,6 +68,10 @@ Optional:
 - `ILINK_BOT_TOKEN`: iLink WeChat Bot token for real WeChat integration
 - `ILINK_BOT_ID`: optional iLink bot identifier populated by QR setup
 - `ILINK_USER_ID`: optional iLink user identifier populated by QR setup
+- `FEISHU_APP_ID` / `FEISHU_APP_SECRET`: Feishu self-built app credentials (enables the Feishu bot)
+- `FEISHU_ENABLED`: set to `false` to disable the Feishu bot even when credentials exist
+- `FEISHU_ALLOWED_OPEN_IDS`: optional comma-separated sender Open ID allowlist for direct chats
+- `FEISHU_ALLOWED_CHAT_IDS`: optional comma-separated `chat_id` allowlist for groups; empty allows every group the bot joins
 
 The history budget uses a conservative character-based token estimate, so a
 smaller custom value retains fewer, more recent messages. Both user messages
@@ -124,8 +128,29 @@ docker exec zhishi-pg createdb -U postgres wechat_claw_test
 bun run test          # run all tests (requires test PG)
 bun run typecheck     # type check (tsc --noEmit)
 bun run build         # build to dist/
-bun run start:wechat  # start runtime
+bun run start:wechat  # start the iLink WeChat runtime (TUI)
+bun run start:feishu  # start the Feishu bot (long connection, no public URL)
 ```
+
+## Feishu bot (group chat)
+
+WeChat Official Accounts cannot join group chats, and the iLink bot has no
+room field, so the group-capable channel is a Feishu self-built app bot. It
+subscribes to `im.message.receive_v1` over a WebSocket long connection (no
+public callback URL), runs the same health agent, and replies under the user's
+message.
+
+- Group chats share one conversation keyed by `chat_id` (one agent memory per
+  group, with speaker attribution); direct chats are keyed by `open_id`.
+- Text and image messages are both supported. Images are downloaded through
+  `im/v1/messages/:message_id/resources` and handed to the vision model, so a
+  food photo can be recorded directly. Vision needs `LLM_SUPPORTS_IMAGE_INPUT=true`
+  and a `LLM_VISION_MODEL` that also supports tool calling.
+- Configure the app, permissions, and long-connection event subscription
+  following `docs/feishu-bot.md`.
+- Add the bot to a group with the group settings UI or
+  `bun scripts/feishu-add-bot-to-chat.ts <chat_id>` (wraps
+  `POST /open-apis/im/v1/chats/:chat_id/members`).
 
 ## CI and release
 
@@ -179,9 +204,10 @@ src/
   tasks/        thread routing, task service
   tools/        tool registry and runners
   tui/          terminal UI
+  feishu/       Feishu bot: event parsing, channel, reply client, long connection
   wechat/       WeChat gateway and iLink client
 
-scripts/        LightRAG startup and knowledge base import scripts
+scripts/        LightRAG startup, knowledge base import, and Feishu group-membership helpers
 docs/plans/     design and implementation docs
 tests/          unit and integration tests
 ```
