@@ -42,6 +42,36 @@ describe("createAgentLoop", () => {
     ).rejects.toThrow("LLM must call at least one tool before sending a final reply");
   });
 
+  it("nudges once when the model answers without a tool call, then accepts the tool-backed reply", async () => {
+    const results: ChatResult[] = [
+      { kind: "final", content: "请问你的体重是多少？" },
+      { kind: "tool_calls", toolCalls: [{ id: "c1", name: "echo", arguments: { value: "hi" } }] },
+      { kind: "final", content: "已记录" },
+    ];
+    let i = 0;
+    const capturedMessages: string[][] = [];
+    const provider: AgentProvider = {
+      plan: async () => ({ reply: "", actions: [] }),
+      chat: async ({ messages }) => {
+        capturedMessages.push(messages.map((message) => message.content ?? "<tool>"));
+        const result = results[Math.min(i, results.length - 1)];
+        i++;
+        return result;
+      },
+    };
+
+    const loop = createAgentLoop({ provider, requireToolCall: true });
+    const reply = await loop({
+      system: "sys",
+      tools: [echoTool],
+      messages: [{ role: "user", content: "hi" }],
+      ctx,
+    });
+
+    expect(reply).toBe("已记录");
+    expect(capturedMessages[1]?.some((content) => content.includes("系统提醒"))).toBe(true);
+  });
+
   it("executes tool calls and appends assistant tool_calls + tool messages before the final reply", async () => {
     const handler = vi.fn().mockResolvedValue({ echoed: "hello" });
     const results: ChatResult[] = [

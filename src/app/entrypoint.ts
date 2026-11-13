@@ -24,7 +24,7 @@ import { createReportGenerator } from "../health/report-generator.js";
 import { ReportRepository } from "../store/repositories/reports.js";
 import { UserProfileRepository } from "../store/repositories/profiles.js";
 import { ConversationRepository } from "../store/repositories/conversations.js";
-import { pino } from "pino";
+import { pino, type Logger } from "pino";
 import type { MessageInput } from "../tasks/service.js";
 import type { InboundWeChatMessage } from "../wechat/types.js";
 import type { AgentContext } from "../health/types.js";
@@ -37,7 +37,10 @@ function todayStr(): string {
   return `${y}-${m}-${day}`;
 }
 
-export async function createDefaultEntrypoint(input: { env: Record<string, string | undefined> }) {
+export async function createDefaultEntrypoint(input: {
+  env: Record<string, string | undefined>;
+  logger?: Logger;
+}) {
   const config = loadConfig(input.env);
 
   let currentMessage: MessageInput | undefined;
@@ -57,7 +60,7 @@ export async function createDefaultEntrypoint(input: { env: Record<string, strin
   const profileRepo = new UserProfileRepository(db);
   const conversationRepository = new ConversationRepository(db);
 
-  const logger = pino({ level: "info" });
+  const logger = input.logger ?? pino({ level: "info" });
   const contextTokens = new Map<string, string>();
 
   const ilinkClient = config.ilinkBotToken
@@ -270,5 +273,16 @@ export async function createDefaultEntrypoint(input: { env: Record<string, strin
         onMessage,
       });
 
-  return { app, gateway, taskService: taskServiceImpl, setCurrentMessage: (msg: MessageInput) => { currentMessage = msg; }, db };
+  return {
+    app,
+    gateway,
+    taskService: taskServiceImpl,
+    setCurrentMessage: (msg: MessageInput) => {
+      currentMessage = msg;
+    },
+    db,
+    logger,
+    healthPipeline,
+    buildContext,
+  };
 }

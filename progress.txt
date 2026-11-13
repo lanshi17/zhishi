@@ -32,7 +32,7 @@ Next: configure `LLM_SUPPORTS_IMAGE_INPUT=true` and, if needed, `LLM_VISION_MODE
 
 [2026-08-15] Task: 项目定名 知食 (ZhīShí)
 Status: 产品身份改名完成 — README 标题与部署示例、package.json name (zhishi)、CLI usage、活跃 PRD 代号均已更新;PG 数据库/容器名等本地基础设施标识有意保留;archive/ 历史文档不改写
-Next: 可选 — 仓库目录 /mnt/data/Projects/Systems/CLI/wechat_claw 重命名为 zhishi
+Next: 可选 — 仓库目录 /mnt/data/Projects/Code/wechat_claw 重命名为 zhishi
 [2026-08-19] Task: 启动知食微信服务
 Status: 首次启动因 PostgreSQL 127.0.0.1:5432 未运行失败; 已启动 wechat-claw-pg PostgreSQL 容器并完成自动迁移，微信 TUI 服务当前运行中
 Next: 保持 wechat-claw 与 wechat-claw-pg 运行；如需停止请分别停止服务与数据库容器
@@ -73,3 +73,18 @@ Next: 需要切发布时执行 `git tag v0.1.0 && git push origin v0.1.0`（rele
 Status: `package.json` 版本 0.0.0 → 1.0.0；新增 `docs/releases/v1.0.0.md`（人工整理的发布说明）；`release.yml` 增加 tag 与版本一致性闸门（tag 必须等于 `v${package.json.version}`，否则构建前失败）并支持以 `docs/releases/<tag>.md` 作为 Release notes（文件不存在时回退 `--generate-notes`）；推送 annotated tag `v1.0.0` 触发发布
 Verification: Release run 38340038144 success（57s）；GitHub Release v1.0.0 已发布（非草稿、非预发布，https://github.com/lanshi17/zhishi/releases/tag/v1.0.0），附件 `zhishi-v1.0.0.tar.gz`（40086 字节）下载校验：80 个条目，含 `dist/main-entrypoint.js`、`dist/smoke.js`、`dist/store/migrations.js`；Release body 为 `docs/releases/v1.0.0.md` 内容；本地门禁复跑通过（246 测试、typecheck、build）；tag 指向 c739de0 且推送时 master 位于同一提交
 Next: 后续版本沿用 README「CI and release」流程：改 `package.json` 版本 → 新增 `docs/releases/<tag>.md` → `git tag <tag> && git push origin <tag>`
+
+[2026-11-13] Task: 飞书机器人接入（agent 群聊）
+Status: 放弃微信服务号/企业微信方案，改为飞书自建应用机器人：新增 src/feishu/（事件解析、白名单/去重/串行化通道、im.message.reply 客户端、WSClient 长连接运行时）与 src/feishu-main.ts 独立入口，新增 start:feishu 脚本、WECOM 方案已删除；配置新增 FEISHU_APP_ID/FEISHU_APP_SECRET/FEISHU_ENABLED/FEISHU_ALLOWED_OPEN_IDS 并同步 .env.example；新增 scripts/feishu-add-bot-to-chat.ts（chatMembers.create，member_id_type=app_id）；新增 docs/feishu-bot.md。
+Verification: 全量测试 38 文件/262 用例通过（需以 .env 中的 DATABASE_URL 生成 TEST_DATABASE_URL 并启动 wechat-claw-pg）；typecheck 与 build 通过；Bun 下 WSClient/EventDispatcher 可构造。
+Next: 需要在飞书开放平台填 App ID/Secret、发布应用并把机器人拉进群后跑 bun run start:feishu 做真实链路验证。
+
+[2026-11-13] Task: 飞书机器人联调
+Status: 飞书长连接已验证（`feishu long connection ready`）；修复三处联调阻塞：LLM_MODEL 改为可用的 Pro/deepseek-ai/DeepSeek-V3.2（原 nex-agi/Nex-N2-Pro 返回 403 Model disabled）、start-lightrag.sh 改用 `"$VENV_DIR/bin/python3"` 显式解释器（venv shebang 指向搬迁前路径）、agent loop 在缺工具调用时追加系统提醒重试两次；LightRAG 已启动并通过 /health 与 /query（鸡胸肉 165 kcal）验证；本地端到端回合（包子→追问身体信息）11.7s 正常返回。
+Verification: tests/agent 50 用例通过（含新增 nudge 用例）；typecheck 通过；build 通过；LightRAG `/health` healthy。
+Next: 等用户在飞书群 @机器人 发一条消息，按 logs/ 中 `feishu message accepted` / `wechat reply` 校验真实收发。
+
+[2026-11-13] Task: 飞书模型切换与图片输入
+Status: LLM_MODEL 与 LLM_VISION_MODEL 均切换为 Qwen/Qwen3.5-35B-A3B（实测同图识别「红色」1.7s、tool_calls=1）；飞书渠道新增图片消息处理：channel 接受 image 消息 → FeishuMessenger.downloadImage 走 im.message_resource.get → data URL → healthPipeline.handleMessage(..., imageUrls)；非 text/image 仍回提示。访问控制按用户要求收紧为“仅本人单聊 + 仅 agentsTeam 群”（FEISHU_ALLOWED_OPEN_IDS / FEISHU_ALLOWED_CHAT_IDS，群内不再校验发送者）。
+Verification: tests/feishu 20 用例通过（含图片下载与群白名单）；typecheck/build 通过；本地视觉端到端「这张图片是什么颜色？」→「红色」3.8s；bot 进程已重启并对齐 .env 模型。
+Next: 用户在 agentsTeam 群发一张食物照片验证图片记账链路。

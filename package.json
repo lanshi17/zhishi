@@ -9,9 +9,11 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "start:mvp": "bun run build && bun dist/smoke.js",
-    "start:wechat": "bun run build && bun dist/main-entrypoint.js"
+    "start:wechat": "bun run build && bun dist/main-entrypoint.js",
+    "start:feishu": "bun run build && bun dist/feishu-main.js"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.76.0",
     "pg": "^8.13.0",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0",

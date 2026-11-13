@@ -32,6 +32,13 @@ export const envSchema = z.object({
   ILINK_BOT_TOKEN: z.string().optional(),
   ILINK_BOT_ID: z.string().optional(),
   ILINK_USER_ID: z.string().optional(),
+
+  // Feishu (飞书) self-built bot, long-connection event subscription
+  FEISHU_ENABLED: z.enum(["true", "false"]).optional(),
+  FEISHU_APP_ID: z.string().optional(),
+  FEISHU_APP_SECRET: z.string().optional(),
+  FEISHU_ALLOWED_OPEN_IDS: z.string().optional(),
+  FEISHU_ALLOWED_CHAT_IDS: z.string().optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
